@@ -1,0 +1,12 @@
+backend/.venv/
+backend/.env
+frontend/node_modules/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/dist/
+backend/data/incoming/*
+!backend/data/incoming/.gitkeep
+.design-reference/
+__pycache__/
+*.pyc
