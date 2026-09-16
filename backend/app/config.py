@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     smtp_from_name: str = "CivicLens"
 
     elevenlabs_api_key: str | None = None
+    elevenlabs_agent_id: str | None = None
+    elevenlabs_phone_number_id: str | None = None
+    call_test_number: str | None = None  # every AI call goes here, never to the business
 
     # nightly import + cleaning + enrichment job (Europe/Brussels time)
     nightly_enabled: bool = True
@@ -43,6 +46,11 @@ class Settings(BaseSettings):
     @property
     def google_places_configured(self) -> bool:
         return bool(self.google_maps_api_key)
+
+    @property
+    def calls_configured(self) -> bool:
+        return bool(self.elevenlabs_api_key and self.elevenlabs_agent_id
+                    and self.elevenlabs_phone_number_id and self.call_test_number)
 
     @property
     def smtp_configured(self) -> bool:

@@ -18,6 +18,32 @@ const STATUS_TEXT: Record<EmailDraft["status"], string> = {
   failed: "Mislukt",
 };
 
+/** Bankrupt or dissolving companies: the officer should think twice before mailing. */
+const abnormal = (b: BusinessSummary) => !!b.legalStatus && b.legalStatus.toLowerCase() !== "normale toestand";
+
+const STANDARD_TEXT: Record<Language, { subject: string; body: string }> = {
+  nl: {
+    subject: "Controle van uw bedrijfsgegevens – gemeente Schoten",
+    body: [
+      "Beste,",
+      "De dienst lokale economie van de gemeente Schoten werkt het overzicht bij van de ondernemingen die actief zijn in onze gemeente.",
+      "Kunt u ons laten weten of uw zaak nog actief is op het adres dat in de Kruispuntbank van Ondernemingen staat, en via welk telefoonnummer en e-mailadres wij u mogen contacteren?",
+      "U kunt eenvoudig op deze e-mail antwoorden.",
+      "Met vriendelijke groeten,\n\n[naam medewerker]\nDienst lokale economie – gemeente Schoten",
+    ].join("\n\n"),
+  },
+  en: {
+    subject: "Checking your business details – municipality of Schoten",
+    body: [
+      "Dear Sir or Madam,",
+      "The local economy department of Schoten is updating its overview of the businesses that are active in our municipality.",
+      "Could you let us know whether your business is still active at the address registered in the Crossroads Bank for Enterprises, and which phone number and e-mail address we may use to reach you?",
+      "You can simply reply to this e-mail.",
+      "Kind regards,\n\n[name]\nLocal economy department – Schoten",
+    ].join("\n\n"),
+  },
+};
+
 export function MailComposer({ source, businesses, smtpConfigured, onClose }: Props) {
   const [purpose, setPurpose] = useState<Purpose>("verify_business_activity");
   const [language, setLanguage] = useState<Language>("nl");
@@ -28,17 +54,22 @@ export function MailComposer({ source, businesses, smtpConfigured, onClose }: Pr
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"manual" | "ai">("manual");
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const withoutEmail = businesses.filter((b) => !b.hasEmail).length;
+  const flagged = businesses.filter(abnormal).length;
   const names = new Map(businesses.map((b) => [b.id, b.displayName]));
 
   async function createDrafts() {
     setCreating(true);
     setCreateError(null);
     try {
+      const text = STANDARD_TEXT[language];
       const created = await source.draftEmails({
         businessIds: businesses.map((b) => b.id), language, purpose, instructions: instructions.trim() || undefined,
-      });
+        mode, subject: text.subject, body: text.body,
+      }, (done, total) => setProgress({ done, total }));
       setDrafts(created.map((d) => ({ ...d, businessName: d.businessName ?? names.get(d.businessId) ?? null })));
       setEdits({});
       setErrors({});
@@ -46,6 +77,7 @@ export function MailComposer({ source, businesses, smtpConfigured, onClose }: Pr
       setCreateError(errorText(e));
     } finally {
       setCreating(false);
+      setProgress(null);
     }
   }
 
@@ -108,15 +140,32 @@ export function MailComposer({ source, businesses, smtpConfigured, onClose }: Pr
             <ul className="recipients">
               {businesses.map((b) => (
                 <li key={b.id}>
-                  <strong>{b.displayName}</strong>
+                  <strong>
+                    {b.displayName}
+                    {abnormal(b) && <em className="legal-warning">rechtstoestand: {b.legalStatus}</em>}
+                    {!abnormal(b) && b.reviewRequired && <em className="legal-warning">controle nodig</em>}
+                  </strong>
                   <span className={b.hasEmail ? "" : "warn-text"}>{b.email ?? (b.hasEmail ? "e-mailadres bekend" : "geen e-mailadres bekend")}</span>
                 </li>
               ))}
             </ul>
+            {flagged > 0 && (
+              <p className="notice warn">
+                {flagged} {flagged === 1 ? "onderneming heeft" : "ondernemingen hebben"} een afwijkende rechtstoestand
+                (bv. faillissement): controleer of u ze nog wilt contacteren.
+              </p>
+            )}
             {withoutEmail > 0 && (
               <p className="muted">{withoutEmail} zonder gekend e-mailadres: u kunt de ontvanger zelf invullen in het concept.</p>
             )}
             <div className="form-grid">
+              <label className="wide">
+                <span>Opstellen met</span>
+                <select value={mode} onChange={(e) => setMode(e.target.value as "manual" | "ai")}>
+                  <option value="manual">Standaardtekst (direct klaar, daarna aanpasbaar)</option>
+                  <option value="ai">AI-concept per onderneming (± 15 s per e-mail)</option>
+                </select>
+              </label>
               <label>
                 <span>Doel</span>
                 <select value={purpose} onChange={(e) => setPurpose(e.target.value as Purpose)}>
@@ -140,7 +189,8 @@ export function MailComposer({ source, businesses, smtpConfigured, onClose }: Pr
             <div className="modal-actions">
               <button type="button" onClick={onClose}>Annuleren</button>
               <button type="button" className="primary" onClick={createDrafts} disabled={creating || !businesses.length}>
-                {creating ? <Spinner /> : <Mail size={15} />} Concepten maken
+                {creating ? <Spinner /> : <Mail size={15} />}
+                {creating && progress ? ` Bezig… ${progress.done}/${progress.total}` : " Concepten maken"}
               </button>
             </div>
           </div>

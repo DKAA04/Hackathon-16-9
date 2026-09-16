@@ -176,6 +176,21 @@ def compute_evidence(
                 f"Google Places status: {status}",
             ))
 
+    other_here = google.get("other_business_at_address")
+    if other_here is not None:
+        evidence.append(_signal(
+            "GOOGLE_OTHER_BUSINESS_AT_ADDRESS", -10,
+            f"Google toont een andere zaak op dit adres: {other_here.value}",
+            f"Google shows a different business at this address: {other_here.value}",
+        ))
+    other_near = google.get("other_business_nearby")
+    if other_near is not None:
+        evidence.append(_signal(
+            "GOOGLE_OTHER_BUSINESS_NEARBY", 0,
+            f"Geen eigen Google-vermelding; wel een andere zaak in de buurt: {other_near.value}",
+            f"No own Google listing; a different business nearby: {other_near.value}",
+        ))
+
     # --- Website evidence ---------------------------------------------------
     website = enrichment_map.get("website", {})
     if google.get("website") or website:

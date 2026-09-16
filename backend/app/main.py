@@ -13,7 +13,7 @@ except ImportError:  # optional dependency — fall back to certifi bundle
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, businesses, email, enrichment, legacy, map as map_api, query
+from app.api import admin, businesses, calls, email, enrichment, legacy, map as map_api, query
 from app.config import settings
 from app.db.database import SessionLocal, init_db
 from app.db.models import Business, Enrichment
@@ -47,6 +47,7 @@ app.include_router(enrichment.router)
 app.include_router(email.router)
 app.include_router(query.router)
 app.include_router(admin.router)
+app.include_router(calls.router)
 app.include_router(legacy.router)
 
 
@@ -102,4 +103,5 @@ def health():
         "google_places_configured": settings.google_places_configured,
         "smtp_configured": settings.smtp_configured,
         "openai_configured": bool(settings.openai_api_key),
+        "calls_configured": settings.calls_configured,
     }

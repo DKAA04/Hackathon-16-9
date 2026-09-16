@@ -150,3 +150,33 @@ def enrich_from_website(website_url: str) -> dict:
         "emails_found": sorted(merged["emails"]),
         "phones_found": sorted(merged["phones"]),
     }
+
+
+def identity_proof(website_url: str, enterprise_numbers: list[str], street: str | None,
+                   house_number: str | None) -> str | None:
+    """Does the site itself show this business? Its enterprise number, or its exact
+    street + house number. Returns a short Dutch reason, or None."""
+    if not website_url.startswith(("http://", "https://")):
+        website_url = "https://" + website_url
+    host = urlparse(website_url).netloc
+    html = _fetch(website_url)
+    if html is None:
+        return None
+    pages = [html]
+    contacts = [u for u in extract_from_html(html, website_url)["contact_urls"] if urlparse(u).netloc in ("", host)]
+    for extra_url in contacts[:MAX_EXTRA_PAGES]:
+        extra = _fetch(extra_url)
+        if extra:
+            pages.append(extra)
+    text = " ".join(BeautifulSoup(page, "html.parser").get_text(" ", strip=True) for page in pages)
+
+    for number in enterprise_numbers:
+        if len(number) == 10 and number[0] in "01":
+            pattern = rf"(?<!\d)(?:{number[0]}?){number[1:4]}\W?{number[4:7]}\W?{number[7:]}(?!\d)"
+            if re.search(pattern, text):
+                return f"ondernemingsnummer {number[:4]}.{number[4:7]}.{number[7:]} staat op de website"
+    if street and house_number:
+        compact = re.sub(r"\s+", " ", text.lower())
+        if re.search(rf"{re.escape(street.lower())}\s*,?\s*{re.escape(house_number.lower())}\b", compact):
+            return f"adres {street} {house_number} staat op de website"
+    return None

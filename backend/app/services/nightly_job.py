@@ -20,7 +20,7 @@ from app.config import settings
 from app.db.database import SessionLocal
 from app.db.models import Business, Enrichment, JobRun
 from app.services.business_service import query_businesses
-from app.services.enrichment_service import enrich_business
+from app.services.enrichment_service import enrich_business, revalidate_google_matches
 from app.services.kbo_import import run_import
 from app.services.sectors import SECTORS, classify, is_co_ownership
 
@@ -159,6 +159,11 @@ def run_nightly(trigger: str = "schedule", enrich_limit: int | None = None) -> d
         stats["review_required"] = review
         note(f"{review} records vragen controle door een medewerker")
 
+        recheck = revalidate_google_matches(db)
+        stats["google_recheck"] = recheck
+        note(f"Google-matches herbekeken: {recheck['checked']} · {recheck['rejected']} afgewezen (andere zaak) · "
+             f"{recheck['confirmed_by_website']} bevestigd via de website",
+             "warning" if recheck["rejected"] else "info")
         candidates = _enrichment_candidates(db, limit)
         if not settings.google_places_configured:
             note("Google Maps niet geconfigureerd: verrijking beperkt tot bekende websites", "warning")
