@@ -32,16 +32,19 @@ function toSummary(d: BusinessDetail): BusinessSummary {
     email, hasEmail, hasPhone, hasWebsite, googleStatus, confidenceScore, confidenceLevel, reviewRequired, lastUpdated };
 }
 
-function SplashScreen() {
+// The splash stays up at least this long so it is readable in the demo; ?nosplash skips it.
+const MIN_SPLASH_MS = 1600;
+const SPLASH_FADE_MS = 400;
+const SKIP_SPLASH = new URLSearchParams(window.location.search).has("nosplash");
+
+/** Same markup as the static splash in index.html, so the hand-over is seamless. */
+function SplashScreen({ leaving, status }: { leaving: boolean; status: string }) {
   return (
-    <div className="splash" role="status" aria-live="polite">
-      <img src="/duckduckgov-mascot.png" alt="DuckDuckGov mascotte" />
-      <div className="splash-copy">
-        <strong>DuckDuckGov</strong>
-        <span>Lokale economie, helder in beeld</span>
-      </div>
-      <div className="splash-progress"><i /></div>
-      <small>KBO-momentopname voorbereiden…</small>
+    <div className={`splash${leaving ? " leaving" : ""}`} role="status" aria-live="polite" aria-busy={!leaving}>
+      <div className="splash-card"><img src="/duckduckgov-logo.png" alt="DuckDuckGov" width={300} height={300} /></div>
+      <p className="splash-tagline">Welke ondernemingen zijn echt actief, en waarop baseren we dat?</p>
+      <div className="splash-progress" aria-hidden><i /></div>
+      <small className="splash-status">{status}</small>
     </div>
   );
 }
@@ -67,9 +70,21 @@ export default function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const requestId = useRef(0);
 
+  const [splashMinDone, setSplashMinDone] = useState(SKIP_SPLASH);
+  const [splashGone, setSplashGone] = useState(SKIP_SPLASH);
+
   useEffect(() => {
     connect().then(setConn).catch((e) => setFatal(errorText(e)));
+    const timer = window.setTimeout(() => setSplashMinDone(true), MIN_SPLASH_MS);
+    return () => window.clearTimeout(timer);
   }, []);
+
+  const splashLeaving = splashMinDone && (!!conn || !!fatal);
+  useEffect(() => {
+    if (!splashLeaving || splashGone) return;
+    const timer = window.setTimeout(() => setSplashGone(true), SPLASH_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [splashLeaving, splashGone]);
 
   useEffect(() => {
     if (conn && imported) conn.source.filters().then(setOptions).catch(() => setOptions(null));
@@ -162,11 +177,18 @@ export default function App() {
     setPanel("mail");
   }
 
+  const splash = splashGone ? null : (
+    <SplashScreen
+      leaving={splashLeaving}
+      status={fatal ? "Starten mislukt" : conn ? (conn.source.mode === "api" ? "Verbonden met de backend" : "Demodata klaar") : "KBO-momentopname voorbereiden…"}
+    />
+  );
+
   if (fatal) {
-    return <div className="boot"><div className="notice error">Kan niet starten: {fatal}</div></div>;
+    return <>{splash}<div className="boot"><div className="notice error">Kan niet starten: {fatal}</div></div></>;
   }
   if (!conn) {
-    return <SplashScreen />;
+    return splash ?? <div className="boot"><Spinner size={20} /> DuckDuckGov laden…</div>;
   }
 
   const { health, source } = conn;
@@ -175,9 +197,10 @@ export default function App() {
 
   return (
     <div className="app">
+      {splash}
       <header className="topbar">
         <div className="brand">
-          <img className="duck-logo" src="/duckduckgov-mascot.png" alt="DuckDuckGov mascotte" />
+          <img className="duck-logo" src="/duckduckgov-logo.png" alt="" />
           <div>
             <strong>DuckDuckGov</strong>
             <small>Lokale economie · {MUNICIPALITY}</small>
