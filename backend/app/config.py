@@ -3,6 +3,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+ENV_PATH = BACKEND_DIR / ".env"
 DATA_DIR = BACKEND_DIR / "data"
 GEOJSON_PATH = DATA_DIR / "reference" / "schoten-kbo-1000-2026-09-07.geojson"
 CSV_PATH = DATA_DIR / "incoming" / "schoten-kbo-1000-2026-09-07.csv"
@@ -26,7 +27,13 @@ class Settings(BaseSettings):
 
     elevenlabs_api_key: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Absolute .env path: loads reliably no matter which directory the
+    # backend is launched from (repo root or backend/).
+    model_config = SettingsConfigDict(
+        env_file=ENV_PATH,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     @property
     def google_places_configured(self) -> bool:
