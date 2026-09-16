@@ -313,9 +313,75 @@ Idempotent re-import of the KBO snapshot (safe to repeat; never duplicates):
 - External provider failures never break business lookups; enrichment
   endpoints return `status: "error"`/`"skipped"` payloads instead of 5xx.
 
-## Planned (P2 — not implemented yet)
+## Email workflow
 
-Email workflow: `POST /api/emails/draft`, `POST /api/emails/{id}/update`,
-`/approve`, `/send` (refuses unapproved; returns
-`EMAIL_PROVIDER_NOT_CONFIGURED` without SMTP), `GET /api/emails`.
+Human-in-the-loop: AI (or an officer) drafts, a human edits/approves, only
+approved drafts can be sent. Drafting always works without SMTP/OpenAI.
+
+Draft shape (everywhere below):
+
+```json
+{
+  "id": 1,
+  "business_id": "2296242396",
+  "recipient": "info@example.be",
+  "subject": "...",
+  "ai_generated_body": "... original AI text or null (manual mode) ...",
+  "final_body": "... human-editable body actually sent ...",
+  "language": "nl",
+  "purpose": "verify_business_activity",
+  "status": "draft" | "approved" | "sent",
+  "created_at": "...", "approved_at": "... | null", "sent_at": "... | null",
+  "events": [{"event_type": "created|updated|approved|sent|send_failed",
+              "provider_message": "...", "created_at": "..."}]
+}
+```
+
+### POST /api/emails/draft
+
+```json
+{
+  "business_ids": ["2296242396"],            // max 20
+  "mode": "ai" | "manual",                   // default "ai"
+  "language": "nl" | "en",                   // default "nl"
+  "purpose": "verify_business_activity" | "verify_contact_details" |
+             "request_correction" | "general_contact",
+  "instructions": "officer guidance (ai mode, optional)",
+  "subject": "required in manual mode",
+  "body": "required in manual mode",
+  "recipient": "optional — defaults to the business's effective email"
+}
+```
+
+Response: `{"drafts": [draft...], "errors": [{"business_id": "...", "error": "AI_NOT_CONFIGURED" | "BUSINESS_NOT_FOUND"}]}`
+
+AI mode uses only factual business data from the database (never invents
+contact details or status). Without `OPENAI_API_KEY`, AI mode returns
+`AI_NOT_CONFIGURED` per business; manual mode always works.
+
+### POST /api/emails/{id}/update
+Body: `{"recipient"?, "subject"?, "body"?}` — editing an approved draft
+resets it to `draft` (approval must be redone). 409 if already sent.
+
+### POST /api/emails/{id}/approve
+Marks the draft human-approved (`approved_at` set). 409 if already sent.
+
+### POST /api/emails/{id}/send
+Refuses anything not approved. Returns `{"status": ..., "error"?: ..., "draft": {...}}`:
+- not approved → `"error": "DRAFT_NOT_APPROVED"`
+- already sent → `"error": "DRAFT_ALREADY_SENT"`
+- no recipient → `"error": "NO_RECIPIENT"`
+- SMTP not configured → `"error": "EMAIL_PROVIDER_NOT_CONFIGURED"` (draft stays approved)
+- SMTP failure → `"error": "SMTP_SEND_FAILED: <type>"` (no credentials ever exposed)
+- success → `"status": "sent"`, draft locked (no edit/resend)
+
+### GET /api/emails
+Query params: `status`, `business_id`, `limit`, `offset` →
+`{"results": [draft...], "total", "limit", "offset"}`
+
+### GET /api/emails/{id}
+Single draft with full event history.
+
+## Planned (P3 — not implemented yet)
+
 Optional `POST /api/query` natural-language filter parsing.
