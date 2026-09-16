@@ -32,6 +32,20 @@ function toSummary(d: BusinessDetail): BusinessSummary {
     email, hasEmail, hasPhone, hasWebsite, googleStatus, confidenceScore, confidenceLevel, reviewRequired, lastUpdated };
 }
 
+function SplashScreen() {
+  return (
+    <div className="splash" role="status" aria-live="polite">
+      <img src="/duckduckgov-mascot.png" alt="DuckDuckGov mascotte" />
+      <div className="splash-copy">
+        <strong>DuckDuckGov</strong>
+        <span>Lokale economie, helder in beeld</span>
+      </div>
+      <div className="splash-progress"><i /></div>
+      <small>KBO-momentopname voorbereiden…</small>
+    </div>
+  );
+}
+
 export default function App() {
   const [conn, setConn] = useState<Connection | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
@@ -152,7 +166,7 @@ export default function App() {
     return <div className="boot"><div className="notice error">Kan niet starten: {fatal}</div></div>;
   }
   if (!conn) {
-    return <div className="boot"><Spinner size={20} /> DuckDuckGov laden…</div>;
+    return <SplashScreen />;
   }
 
   const { health, source } = conn;
@@ -163,7 +177,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="logo" aria-hidden>D</span>
+          <img className="duck-logo" src="/duckduckgov-mascot.png" alt="DuckDuckGov mascotte" />
           <div>
             <strong>DuckDuckGov</strong>
             <small>Lokale economie · {MUNICIPALITY}</small>

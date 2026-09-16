@@ -4,6 +4,7 @@ import { formatCount } from "../lib/format";
 import { ConfidenceBadge, ContactIcons, Segmented, Spinner, TriToggle, TypeChip } from "./ui";
 
 export interface Filters {
+  category?: "bakery";
   street?: string;
   recordType?: RecordType;
   legalStatus?: string;
@@ -50,6 +51,13 @@ export function Sidebar(p: Props) {
         <div className="filter-row">
           <Segmented<RecordType> label="Type" value={p.filters.recordType} onChange={(v) => set({ recordType: v })}
             options={[{ value: undefined, label: "Alle" }, { value: "ENTERPRISE", label: "Ondernemingen" }, { value: "ESTABLISHMENT", label: "Vestigingen" }]} />
+        </div>
+        <div className="quick-filter" aria-label="Snelle sectorfilters">
+          <button type="button" className={p.filters.category === "bakery" ? "on" : ""}
+            onClick={() => set({ category: p.filters.category === "bakery" ? undefined : "bakery" })}>
+            🥖 Bakkerijen
+          </button>
+          {p.filters.category === "bakery" && <span>naam/activiteit bevat bakkerijterm</span>}
         </div>
         <div className="filter-row">
           <Segmented<Level> label="Zekerheid" value={p.filters.level} onChange={(v) => set({ level: v })}

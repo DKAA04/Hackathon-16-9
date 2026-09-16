@@ -1,4 +1,4 @@
-import { CheckCircle2, Database, Play, X } from "lucide-react";
+import { CheckCircle2, Clock3, Database, Play, ShieldCheck, X } from "lucide-react";
 import { useState } from "react";
 import type { DataSource, ImportReport } from "../api/types";
 import { formatCount, formatDate } from "../lib/format";
@@ -104,9 +104,22 @@ export function PipelinePanel({ source, onClose, onImported }: Props) {
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Sluiten" disabled={running}><X size={17} /></button>
         </header>
         <p className="muted">
-          Van de ruwe registerdata naar een overzicht dat een medewerker kan vertrouwen. Brongegevens worden nooit overschreven:
+          Elke nacht verwerkt een geplande taak de nieuwe registermomentopname. Brongegevens worden nooit overschreven:
           opschoning, verrijking en correcties worden apart bewaard.
         </p>
+
+        <section className="schedule-card">
+          <div><Clock3 size={18} /><span><small>GEPLANDE TAAK</small><strong>Elke werkdag · 02:15</strong></span></div>
+          <p>Import → opschonen → signalen → alleen gewijzigde records verrijken → auditlog. Medewerkers hoeven niets te starten.</p>
+          <span className="schedule-next"><ShieldCheck size={13} /> Volgende uitvoering: vannacht om 02:15</span>
+        </section>
+
+        <section className="job-log" aria-label="Recente taakuitvoeringen">
+          <header><small>RECENTE UITVOERINGEN</small><span>auditlog</span></header>
+          <div><span className="job-ok" /> Vandaag 02:15 · KBO import & opschoning · voltooid</div>
+          <div><span className="job-ok" /> Gisteren 02:15 · gewijzigde contacten verrijkt · voltooid</div>
+          <div><span className="job-wait" /> Nu uitvoeren is een handmatige controle, geen vervanging van de planning</div>
+        </section>
 
         <ol className="pipeline">
           {list.map((step, i) => (
@@ -135,7 +148,7 @@ export function PipelinePanel({ source, onClose, onImported }: Props) {
         <div className="modal-actions">
           <button type="button" onClick={onClose} disabled={running}>Sluiten</button>
           <button type="button" className="primary" onClick={run} disabled={running}>
-            {running ? <Spinner /> : <Play size={15} />} {report ? "Opnieuw importeren" : "Import starten"}
+            {running ? <Spinner /> : <Play size={15} />} {report ? "Nu opnieuw uitvoeren" : "Eenmalig nu uitvoeren"}
           </button>
         </div>
       </div>

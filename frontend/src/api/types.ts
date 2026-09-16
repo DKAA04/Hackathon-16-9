@@ -112,6 +112,8 @@ export interface FilterOptions {
 
 export interface BusinessQuery {
   query?: string;
+  /** Domain category. The backend will eventually map this to NACE + approved aliases. */
+  category?: "bakery";
   street?: string;
   recordType?: RecordType;
   legalStatus?: string;

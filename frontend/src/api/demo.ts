@@ -293,6 +293,12 @@ export async function createDemoSource(): Promise<DataSource> {
         const numberHit = digits.length >= 4 && (r.business_number.includes(digits) || (r.parent_enterprise_number ?? "").includes(digits));
         if (!haystack.includes(needle) && !numberHit) return false;
       }
+      if (q.category === "bakery") {
+        // Transparent demo taxonomy; production backend will use NACE + reviewed aliases.
+        const bakeryWords = ["bakker", "bakery", "boulanger", "patis", "brood", "taart", "pastry"];
+        const haystack = normalize([s.displayName, r.legal_name, r.commercial_name, r.nace_description].join(" "));
+        if (!bakeryWords.some((word) => haystack.includes(word))) return false;
+      }
       return true;
     });
   }

@@ -18,6 +18,7 @@ const ERROR_TEXT: Record<string, string> = {
 export function queryString(q: BusinessQuery, paging = true): string {
   const p = new URLSearchParams();
   if (q.query) p.set("query", q.query);
+  if (q.category) p.set("category", q.category);
   if (q.street) p.set("street", q.street);
   if (q.recordType) p.set("record_type", q.recordType);
   if (q.legalStatus) p.set("legal_status", q.legalStatus);
