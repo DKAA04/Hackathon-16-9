@@ -9,3 +9,7 @@ pypdf
 rapidfuzz
 python-dotenv
 openai
+sqlalchemy
+httpx
+beautifulsoup4
+pytest
