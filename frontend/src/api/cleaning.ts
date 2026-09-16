@@ -24,6 +24,7 @@ export interface CleanRecord {
   address_register_postcode: string | null;
   phone: string | null;
   email: string | null;
+  nace_code: string | null;
   nace_description: string | null;
   employee_class: string | null;
   registration_date: string | null;
@@ -135,6 +136,7 @@ export function cleanKbo(raw: unknown): { records: CleanRecord[]; report: Cleani
       address_register_postcode: text(p, "AR_postcode"),
       phone: text(p, "Telefoonnummer"),
       email: text(p, "Email"),
+      nace_code: text(p, "NACE_hoofdact_RSZ") ?? text(p, "NACE_hoofdact_BTW"),
       nace_description: text(p, "Omschrijving_hoofdact_RSZ") ?? text(p, "Omschrijving_hoofdact_BTW"),
       employee_class: text(p, "Personeelsklasse"),
       registration_date: date(p, "Datum_inschrijving"),

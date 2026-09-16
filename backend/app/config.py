@@ -27,6 +27,11 @@ class Settings(BaseSettings):
 
     elevenlabs_api_key: str | None = None
 
+    # nightly import + cleaning + enrichment job (Europe/Brussels time)
+    nightly_enabled: bool = True
+    nightly_time: str = "02:15"
+    nightly_enrich_limit: int = 20
+
     # Absolute .env path: loads reliably no matter which directory the
     # backend is launched from (repo root or backend/).
     model_config = SettingsConfigDict(

@@ -26,6 +26,13 @@ export interface BusinessSummary {
   confidenceLevel: Level | null;
   reviewRequired: boolean;
   lastUpdated: string | null;
+  sectors: string[];
+}
+
+export interface SectorMatch {
+  value: string;
+  label: string;
+  reason: string;
 }
 
 export interface EvidenceReason {
@@ -61,6 +68,7 @@ export interface HistoryEvent {
 }
 
 export interface BusinessDetail extends BusinessSummary {
+  sectorMatches: SectorMatch[];
   houseNumber: string | null;
   postcode: string | null;
   municipality: string | null;
@@ -108,12 +116,13 @@ export interface FilterOptions {
   recordTypes: Facet<RecordType>[];
   legalStatuses: Facet[];
   googleStatuses: Facet[];
+  sectors: Array<{ value: string; label: string; count: number | null }>;
 }
 
 export interface BusinessQuery {
   query?: string;
-  /** Domain category. The backend will eventually map this to NACE + approved aliases. */
-  category?: "bakery";
+  /** Occupation sector key (bakkerij, horeca, zorg, ...), see /api/filters. */
+  sector?: string;
   street?: string;
   recordType?: RecordType;
   legalStatus?: string;
@@ -232,6 +241,32 @@ export interface ImportReport {
   backend: { inserted: number | null; updated: number | null; skipped: number | null; errors: number | null; total: number | null } | null;
 }
 
+export interface JobLogLine {
+  at: string | null;
+  level: string; // info | warning | error
+  message: string;
+}
+
+export interface JobRunInfo {
+  id: string;
+  trigger: string; // schedule | manual
+  status: string; // running | success | failed
+  startedAt: string | null;
+  finishedAt: string | null;
+  log: JobLogLine[];
+}
+
+export interface JobsInfo {
+  enabled: boolean;
+  time: string;
+  timezone: string;
+  nextRunAt: string | null;
+  enrichLimit: number | null;
+  steps: string[];
+  running: boolean;
+  runs: JobRunInfo[];
+}
+
 export interface DataSource {
   mode: DataMode;
   health(): Promise<HealthInfo>;
@@ -241,6 +276,9 @@ export interface DataSource {
   business(id: string): Promise<BusinessDetail>;
   enrich(id: string): Promise<EnrichOutcome>;
   runImport(): Promise<ImportReport>;
+  /** Nightly job schedule and runs; null when this data source has no scheduler (demo mode). */
+  jobs(): Promise<JobsInfo | null>;
+  runNightly(enrichLimit?: number): Promise<void>;
   draftEmails(request: DraftRequest): Promise<EmailDraft[]>;
   updateEmail(id: string, patch: EmailPatch): Promise<EmailDraft>;
   approveEmail(id: string): Promise<EmailDraft>;

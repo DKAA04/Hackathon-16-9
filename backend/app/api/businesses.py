@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.services.sectors import SECTORS, sector_keys
 from app.db.database import get_db
 from app.db.models import Business, BusinessOverride, Enrichment
 from app.services.business_service import (
@@ -30,6 +31,7 @@ class OverrideRequest(BaseModel):
 @router.get("/businesses")
 def list_businesses(
     query: str | None = None,
+    sector: str | None = Query(default=None, pattern="^(bakkerij|horeca|zorg|kapper|bouw|auto|winkel|advies)$"),
     street: str | None = None,
     postcode: str | None = None,
     municipality: str | None = None,
@@ -48,6 +50,7 @@ def list_businesses(
 ):
     return query_businesses(db, {
         "query": query,
+        "sector": sector,
         "street": street,
         "postcode": postcode,
         "municipality": municipality,
@@ -149,5 +152,14 @@ def filter_values(db: Session = Depends(get_db)):
         "legal_statuses": counts(Business.legal_status),
         "legal_forms": counts(Business.legal_form),
         "google_statuses": [{"value": v, "count": c} for v, c in google_rows],
+        "sectors": sector_counts(db.query(Business).all()),
         "total_businesses": db.query(Business).count(),
     }
+
+
+def sector_counts(businesses) -> list[dict]:
+    counts = {sector.key: 0 for sector in SECTORS}
+    for business in businesses:
+        for key in sector_keys(business):
+            counts[key] += 1
+    return [{"value": s.key, "label": s.label, "count": counts[s.key]} for s in SECTORS]

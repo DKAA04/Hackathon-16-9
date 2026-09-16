@@ -23,6 +23,7 @@ def _valid_coords(lon, lat) -> bool:
 @router.get("/map")
 def map_features(
     query: str | None = None,
+    sector: str | None = None,
     street: str | None = None,
     postcode: str | None = None,
     municipality: str | None = None,
@@ -39,6 +40,7 @@ def map_features(
     never needs to parse the original KBO GeoJSON."""
     result = query_businesses(db, {
         "query": query,
+        "sector": sector,
         "street": street,
         "postcode": postcode,
         "municipality": municipality,
@@ -57,7 +59,7 @@ def map_features(
     items = list(result["results"])
     while len(items) < result["total"]:
         more = query_businesses(db, {
-            "query": query, "street": street, "postcode": postcode,
+            "query": query, "sector": sector, "street": street, "postcode": postcode,
             "municipality": municipality, "record_type": record_type,
             "legal_status": legal_status, "google_status": google_status,
             "review_required": review_required, "has_email": has_email,
@@ -93,6 +95,7 @@ def map_features(
                 "has_email": item["has_email"],
                 "has_phone": item["has_phone"],
                 "has_website": item["has_website"],
+                "sectors": item["sectors"],
             },
         })
 

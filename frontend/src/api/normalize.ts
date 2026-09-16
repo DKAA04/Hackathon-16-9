@@ -3,7 +3,7 @@
 import { addressLine, latest } from "../lib/format";
 import type {
   BusinessDetail, BusinessSummary, ContactValue, DraftStatus, EmailDraft, EvidenceReason, Facet,
-  FilterOptions, HealthInfo, HistoryEvent, Level, MapData, RecordType, SourceStamp,
+  FilterOptions, HealthInfo, HistoryEvent, JobsInfo, Level, MapData, RecordType, SourceStamp,
 } from "./types";
 
 type Json = Record<string, unknown>;
@@ -55,7 +55,12 @@ function effectiveValue(raw: unknown, field: string): { value: string | null; so
       url: str(pick(v, "source_url", "url")),
     };
   }
-  return { value: str(v), source: str(pick(raw, `effective_sources.${field}`, `provenance.${field}`)), updatedAt: null, url: null };
+  return {
+    value: str(v),
+    source: str(pick(raw, `effective.${field}_source`, `effective_sources.${field}`, `provenance.${field}`)),
+    updatedAt: null,
+    url: null,
+  };
 }
 
 export function toLevel(value: unknown, score: number | null): Level | null {
@@ -73,7 +78,7 @@ export function toSummary(raw: unknown): BusinessSummary {
   const email = effectiveValue(raw, "email").value ?? str(pick(b, "effective_email", "email"));
   const phone = effectiveValue(raw, "phone").value ?? str(pick(b, "effective_phone", "phone"));
   const website = effectiveValue(raw, "website").value ?? str(pick(b, "effective_website", "website"));
-  const street = str(pick(b, "kbo_street", "street"));
+  const street = str(pick(b, "kbo_street", "street", "address.street"));
   const recordType: RecordType = str(pick(b, "record_type"))?.toUpperCase() === "ESTABLISHMENT" ? "ESTABLISHMENT" : "ENTERPRISE";
   const businessNumber = str(pick(b, "business_number", "enterprise_number")) ?? "";
   return {
@@ -86,13 +91,13 @@ export function toSummary(raw: unknown): BusinessSummary {
       str(pick(b, "display_name", "commercial_name", "legal_name", "short_name", "name")) ??
       "(naam onbekend)",
     address:
-      str(pick(raw, "address", "business.address")) ??
+      str(pick(raw, "address", "business.address.formatted", "business.address")) ??
       addressLine({
         street,
-        number: str(pick(b, "kbo_house_number", "house_number")),
-        bus: str(pick(b, "kbo_bus_number")),
-        postcode: str(pick(b, "kbo_postcode", "postcode")),
-        municipality: str(pick(b, "kbo_municipality", "municipality")),
+        number: str(pick(b, "kbo_house_number", "house_number", "address.house_number")),
+        bus: str(pick(b, "kbo_bus_number", "address.bus_number")),
+        postcode: str(pick(b, "kbo_postcode", "postcode", "address.postcode")),
+        municipality: str(pick(b, "kbo_municipality", "municipality", "address.municipality")),
       }),
     street,
     lat: num(pick(b, "latitude", "lat")),
@@ -107,6 +112,9 @@ export function toSummary(raw: unknown): BusinessSummary {
     confidenceLevel: toLevel(pick(raw, "confidence_level", "confidence.level"), score),
     reviewRequired: bool(pick(raw, "review_required", "confidence.review_required")),
     lastUpdated: str(pick(raw, "last_updated", "updated_at", "business.updated_at", "business.imported_at")),
+    sectors: (Array.isArray(pick(raw, "sectors")) ? (pick(raw, "sectors") as unknown[]) : [])
+      .map((x) => (typeof x === "string" ? x : str(pick(x, "value"))))
+      .filter((x): x is string => !!x),
   };
 }
 
@@ -118,6 +126,8 @@ function toEvidence(raw: unknown): EvidenceReason[] {
     label: str(pick(e, "label_nl", "label", "description", "message", "code")) ?? "",
   }));
 }
+
+const percent = (v: number | null) => (v === null ? null : Math.round(v <= 1 ? v * 100 : v));
 
 const CONTACT_LABELS = { phone: "Telefoon", email: "E-mail", website: "Website" } as const;
 
@@ -141,7 +151,7 @@ function toContact(raw: unknown, field: ContactValue["field"], overrides: Json[]
     const top = found[0];
     return { ...base, value: str(pick(top, "value")), source: str(pick(top, "provider", "source")),
       sourceUrl: str(pick(top, "source_url", "url")), updatedAt: str(pick(top, "retrieved_at", "created_at")),
-      confidence: num(pick(top, "confidence")), alternatives: found.length - 1 };
+      confidence: percent(num(pick(top, "confidence"))), alternatives: found.length - 1 };
   }
   const effective = effectiveValue(raw, field);
   const kboValue = field === "website" ? null : str(pick(raw, `business.${field}`, `sources.kbo.${field}`));
@@ -182,9 +192,14 @@ function toHistory(raw: unknown): HistoryEvent[] {
 export function toDetail(raw: unknown, history: unknown, datasetDate: string | null): BusinessDetail {
   const summary = toSummary(raw);
   const b = (pick(raw, "business") ?? raw) as Json;
-  const overrides = arr(pick(raw, "overrides", "manual_overrides", "sources.manual_override.history"));
-  const enrichments = arr(pick(raw, "enrichments", "sources.enrichments"));
-  const kboDate = str(pick(raw, "sources.kbo.snapshot_date", "sources.kbo.retrieved_on", "business.source_snapshot_date")) ?? datasetDate;
+  const rowsOf = (path: string) => {
+    const v = pick(raw, path);
+    return v && typeof v === "object" && !Array.isArray(v) ? arr(Object.values(v)) : arr(v);
+  };
+  const overrides = [...arr(pick(raw, "overrides", "manual_overrides")), ...rowsOf("sources.manual_override")];
+  const enrichments = [...arr(pick(raw, "enrichments")), ...rowsOf("sources.google_places"), ...rowsOf("sources.website")];
+  const kboDate = str(pick(raw, "sources.kbo.snapshot_date", "sources.kbo.retrieved_on", "business.source_snapshot_date"))
+    ?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? datasetDate;
   const newest = (provider: string) =>
     latest(...enrichments.filter((e) => str(pick(e, "provider")) === provider).map((e) => str(pick(e, "retrieved_at"))));
 
@@ -206,19 +221,24 @@ export function toDetail(raw: unknown, history: unknown, datasetDate: string | n
     street: str(pick(b, "kbo_street")), number: str(pick(b, "kbo_house_number")), bus: str(pick(b, "kbo_bus_number")),
     postcode: str(pick(b, "kbo_postcode")), municipality: str(pick(b, "kbo_municipality")),
   });
-  const registerStreet = str(pick(b, "address_register_street"));
+  const registerStreet = str(pick(b, "address_register_street", "address_register.street"));
   return {
     ...summary,
+    sectorMatches: arr(pick(raw, "sectors")).map((m) => ({
+      value: str(pick(m, "value")) ?? "",
+      label: str(pick(m, "label", "value")) ?? "",
+      reason: str(pick(m, "reason")) ?? "",
+    })),
     lastUpdated: summary.lastUpdated ?? latest(...sources.map((s) => s.updatedAt)),
-    houseNumber: str(pick(b, "kbo_house_number", "house_number")),
-    postcode: str(pick(b, "kbo_postcode", "postcode")),
-    municipality: str(pick(b, "kbo_municipality", "municipality")),
+    houseNumber: str(pick(b, "kbo_house_number", "house_number", "address.house_number")),
+    postcode: str(pick(b, "kbo_postcode", "postcode", "address.postcode")),
+    municipality: str(pick(b, "kbo_municipality", "municipality", "address.municipality")),
     legalName: str(pick(b, "legal_name")),
     commercialName: str(pick(b, "commercial_name")),
     shortName: str(pick(b, "short_name")),
     legalForm: str(pick(b, "legal_form")),
     businessType: str(pick(b, "business_type")),
-    activity: str(pick(b, "nace_rsz_description", "nace_vat_description", "nace_description")),
+    activity: str(pick(b, "nace_rsz_description", "nace_vat_description", "nace_description", "nace.rsz_description", "nace.vat_description")),
     employeeClass: str(pick(b, "employee_class")),
     registrationDate: str(pick(b, "registration_date")),
     startDate: str(pick(b, "start_date")),
@@ -227,10 +247,11 @@ export function toDetail(raw: unknown, history: unknown, datasetDate: string | n
     exOfficioReason: str(pick(b, "ex_officio_reason", "ex_officio_deregistration_reason")),
     addressDeregistrationDate: str(pick(b, "address_deregistration_date")),
     addressDeregistrationReason: str(pick(b, "address_deregistration_reason")),
-    kboAddress: kboAddress || summary.address,
+    kboAddress: str(pick(b, "address.formatted")) ?? (kboAddress || summary.address),
     registerAddress: registerStreet
-      ? addressLine({ street: registerStreet, number: str(pick(b, "address_register_house_number")),
-          bus: str(pick(b, "address_register_bus_number")), postcode: str(pick(b, "address_register_postcode")) })
+      ? addressLine({ street: registerStreet, number: str(pick(b, "address_register_house_number", "address_register.house_number")),
+          bus: str(pick(b, "address_register_bus_number", "address_register.bus_number")),
+          postcode: str(pick(b, "address_register_postcode", "address_register.postcode")) })
       : null,
     annualAccountsUrl: str(pick(b, "annual_accounts_url")),
     registerUrl: str(pick(raw, "register_url", "kbo_url")),
@@ -298,6 +319,9 @@ export function toFilters(raw: unknown): FilterOptions {
     recordTypes,
     legalStatuses: facets(pick(raw, "legal_statuses", "legalStatuses")),
     googleStatuses: facets(pick(raw, "google_statuses", "googleStatuses")),
+    sectors: arr(pick(raw, "sectors"))
+      .map((x) => ({ value: str(pick(x, "value")) ?? "", label: str(pick(x, "label", "value")) ?? "", count: num(pick(x, "count")) }))
+      .filter((x) => x.value),
   };
 }
 
@@ -306,7 +330,8 @@ export function toHealth(raw: unknown): HealthInfo {
     mode: "api",
     businessCount: num(pick(raw, "business_count")) ?? 0, // the old starter API (records_loaded) is another contract
     datasetName: str(pick(raw, "dataset.name")) ?? "KBO-momentopname",
-    retrievedOn: str(pick(raw, "dataset.snapshot_date", "dataset.retrieved_on")),
+    // "2026-09-07 Europe/Brussels" -> "2026-09-07"
+    retrievedOn: str(pick(raw, "dataset.snapshot_date", "dataset.retrieved_on"))?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? null,
     snapshotNote: str(pick(raw, "dataset.snapshot_note", "dataset.note")),
     attribution: str(pick(raw, "dataset.attribution")),
     smtpConfigured: bool(pick(raw, "smtp_configured")),
@@ -360,5 +385,30 @@ export function errorInfo(raw: unknown): { code: string | null; message: string 
   return {
     code: str(pick(source, "code", "error_code")) ?? (typeof pick(raw, "error") === "string" ? str(pick(raw, "error")) : null),
     message: str(pick(source, "message", "msg")) ?? str(detail),
+  };
+}
+
+export function toJobs(raw: unknown): JobsInfo {
+  const steps = pick(raw, "schedule.steps");
+  return {
+    enabled: bool(pick(raw, "schedule.enabled")),
+    time: str(pick(raw, "schedule.time")) ?? "",
+    timezone: str(pick(raw, "schedule.timezone")) ?? "",
+    nextRunAt: str(pick(raw, "schedule.next_run_at")),
+    enrichLimit: num(pick(raw, "schedule.enrich_limit")),
+    steps: Array.isArray(steps) ? steps.map(String) : [],
+    running: bool(pick(raw, "running")),
+    runs: arr(pick(raw, "runs")).map((r) => ({
+      id: str(pick(r, "id")) ?? "",
+      trigger: str(pick(r, "trigger")) ?? "",
+      status: str(pick(r, "status")) ?? "",
+      startedAt: str(pick(r, "started_at")),
+      finishedAt: str(pick(r, "finished_at")),
+      log: arr(pick(r, "log")).map((l) => ({
+        at: str(pick(l, "at")),
+        level: str(pick(l, "level")) ?? "info",
+        message: str(pick(l, "message")) ?? "",
+      })),
+    })),
   };
 }

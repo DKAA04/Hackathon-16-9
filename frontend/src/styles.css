@@ -357,3 +357,47 @@ input:focus, select:focus, textarea:focus { border-color: #b7ff3c88; }
   .runs li { grid-template-columns: 18px 1fr; }
   .runs em { grid-column: 2; }
 }
+
+/* ---------- sector filter ---------- */
+.sector-filter { display: grid; gap: 6px; }
+.sector-filter label span { display: block; font: 700 9px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.sector-filter small { font-size: 11px; }
+.sector-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.sector-chips button { height: 28px; padding: 0 9px; font-size: 12px; color: var(--soft); gap: 5px; }
+.sector-chips button b { font: 700 10px var(--mono); color: var(--muted); }
+.sector-chips button.on { background: #b7ff3c14; border-color: #b7ff3c66; color: var(--accent); }
+.sector-chips button.on b { color: var(--accent); }
+.sector-tags { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.sector-tags li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 12px; }
+.sector-tags strong { color: var(--accent); font-size: 12px; padding: 2px 7px; border: 1px solid #b7ff3c47; border-radius: 6px; background: #b7ff3c0d; }
+.sector-tags span { color: var(--muted); }
+
+/* ---------- admin: nightly job ---------- */
+.modal.wide { width: min(980px, 100%); }
+.schedule {
+  display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; margin-top: 14px;
+  padding: 14px 16px; border: 1px solid #b7ff3c33; border-radius: var(--radius); background: #b7ff3c08;
+}
+.schedule > svg { color: var(--accent); grid-row: span 2; }
+.schedule small { display: block; font: 700 9px var(--mono); letter-spacing: .12em; color: var(--muted); }
+.schedule strong { display: block; font-size: 17px; margin-top: 2px; }
+.schedule span { color: var(--soft); font-size: 12px; }
+.schedule .steps { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; }
+.schedule .steps span { font: 600 11px var(--mono); color: var(--muted); }
+.section-label { margin: 18px 0 8px; font: 700 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.section-label em { font-style: normal; text-transform: none; letter-spacing: 0; font-family: inherit; margin-left: 6px; }
+.runs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 52vh; overflow-y: auto; }
+.run { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.run.running { border-color: #b7ff3c55; }
+.run.failed { border-color: #ff6b6b55; }
+.run summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; list-style: none; font-size: 13px; }
+.run summary::-webkit-details-marker { display: none; }
+.run summary span { color: var(--muted); }
+.run summary em { margin-left: auto; font-style: normal; color: var(--soft); font-size: 12px; }
+.run-log { list-style: none; margin: 0; padding: 4px 12px 12px; display: grid; gap: 4px; border-top: 1px solid #17261f; }
+.run-log li { display: grid; grid-template-columns: 64px 14px 1fr; gap: 8px; align-items: baseline; font-size: 12.5px; line-height: 1.45; padding-top: 4px; }
+.run-log time { font: 11px var(--mono); color: var(--muted); }
+.run-log .dot { width: 6px; height: 6px; border-radius: 6px; background: var(--border-strong); display: inline-block; }
+.run-log li.warning { color: #ffe6ad; } .run-log li.warning svg { color: var(--warn); }
+.run-log li.error { color: #ffd0d0; } .run-log li.error svg { color: var(--danger); }
+.modal-actions .small { margin-right: auto; align-self: center; }

@@ -118,6 +118,21 @@ class BusinessOverride(Base):
     business: Mapped[Business] = relationship(back_populates="overrides")
 
 
+class JobRun(Base):
+    """One execution of a background job (nightly import, cleaning and enrichment)."""
+
+    __tablename__ = "job_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_name: Mapped[str] = mapped_column(String, index=True)
+    trigger: Mapped[str] = mapped_column(String)  # schedule | manual
+    status: Mapped[str] = mapped_column(String, index=True)  # running | success | failed
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    stats_json: Mapped[str | None] = mapped_column(Text)
+    log_json: Mapped[str | None] = mapped_column(Text)
+
+
 class EmailDraft(Base):
     __tablename__ = "email_drafts"
 

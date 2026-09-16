@@ -56,6 +56,7 @@ Query parameters (all optional):
 | param | type | notes |
 |---|---|---|
 | `query` | string | searches name(s), business number, street, municipality |
+| `sector` | `bakkerij` \| `horeca` \| `zorg` \| `kapper` \| `bouw` \| `auto` \| `winkel` \| `advies` | occupation, see below (422 for unknown keys) |
 | `street` | string | substring match on KBO street |
 | `postcode` | string | exact |
 | `municipality` | string | case-insensitive exact |
@@ -103,7 +104,8 @@ Response:
       "has_website": false,
       "confidence_score": 75,
       "confidence_level": "HIGH",
-      "review_required": false
+      "review_required": false,
+      "sectors": ["zorg"]
     }
   ],
   "total": 35,
@@ -132,6 +134,10 @@ Full detail with provenance. 404 `{"detail": "Business not found"}` if unknown.
     "manual_override": { "email": {override row}, ... } | null
   },
   "effective": { ...same shape as in list... },
+  "sectors": [
+    {"value": "zorg", "label": "Zorg & welzijn",
+     "reason": "activiteitscode 86230 (Activiteiten van tandartspraktijken)"}
+  ],
   "evidence": [
     {"code": "ADDRESS_MATCH", "effect": 15,
      "label_nl": "KBO-adres komt overeen met het Adressenregister",
@@ -209,6 +215,7 @@ Filter values + counts for building UI dropdowns:
   "legal_statuses": [...],
   "legal_forms": [...],
   "google_statuses": [...],
+  "sectors": [{"value": "bakkerij", "label": "Bakkerijen & banket", "count": 1}, ...],
   "total_businesses": 1000
 }
 ```
@@ -218,7 +225,7 @@ Filter values + counts for building UI dropdowns:
 ## GET /api/map
 
 Normalized GeoJSON FeatureCollection. Same filters as `/api/businesses`
-(minus pagination): `query`, `street`, `postcode`, `municipality`,
+(minus pagination): `query`, `sector`, `street`, `postcode`, `municipality`,
 `record_type`, `legal_status`, `google_status`, `review_required`,
 `has_email`, `has_phone`, `has_website`.
 
@@ -241,7 +248,8 @@ Normalized GeoJSON FeatureCollection. Same filters as `/api/businesses`
         "google_status": null,
         "has_email": false,
         "has_phone": false,
-        "has_website": false
+        "has_website": false,
+        "sectors": []
       }
     }
   ],
@@ -296,6 +304,43 @@ Idempotent re-import of the KBO snapshot (safe to repeat; never duplicates):
 ```
 
 ---
+
+### Sectors (occupation filter)
+
+The KBO snapshot barely records activities, so a sector matches on a NACE code prefix
+**or** a whole-word keyword in the business name (`services/sectors.py`). Every match
+carries a `reason`. Co-ownership associations (VME) never get a sector. Keys:
+`bakkerij`, `horeca`, `zorg`, `kapper`, `bouw`, `auto`, `winkel`, `advies`.
+
+## Nightly job (admin)
+
+Runs inside the backend every night at `NIGHTLY_TIME` (Europe/Brussels): re-import the
+snapshot → cleaning/quality summary → register signals → sector counts → enrich up to
+`NIGHTLY_ENRICH_LIMIT` records that were never checked (sector businesses without
+contact data first). Every run and its log lines are stored in `job_runs`.
+
+### GET /api/admin/jobs?limit=10
+
+```json
+{
+  "schedule": {"job_name": "nightly", "enabled": true, "time": "02:15", "timezone": "Europe/Brussels",
+               "next_run_at": "2026-09-17T02:15+02:00", "enrich_limit": 20,
+               "steps": ["import", "opschoning", "registersignalen", "sectoren", "verrijking"]},
+  "running": false,
+  "runs": [{"id": 1, "job_name": "nightly", "trigger": "manual", "status": "success",
+            "started_at": "2026-09-16T12:25:01+00:00", "finished_at": "2026-09-16T12:25:09+00:00",
+            "stats": {"import": {...}, "quality": {...}, "review_required": 127, "enrichment": {...}},
+            "log": [{"at": "2026-09-16T12:25:02+00:00", "level": "info", "message": "KBO-momentopname ingelezen: ..."}]}]
+}
+```
+
+### POST /api/admin/jobs/nightly/run?enrich_limit=5
+
+Starts a run in the background → 202 `{"started": true}`; follow it with
+`GET /api/admin/jobs`. 409 `{"detail": {"error": "JOB_ALREADY_RUNNING"}}` if a run is active.
+
+Settings (`backend/.env`): `NIGHTLY_ENABLED` (default `true`), `NIGHTLY_TIME` (`02:15`),
+`NIGHTLY_ENRICH_LIMIT` (`20`). The job only runs while the backend is running.
 
 ## Legacy endpoints (existing frontend starter keeps working)
 

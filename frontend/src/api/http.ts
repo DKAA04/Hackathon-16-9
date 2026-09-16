@@ -1,5 +1,5 @@
 // Client for the DuckDuckGov backend (FastAPI). Endpoints follow the backend API brief.
-import { errorInfo, toDetail, toDrafts, toFilters, toHealth, toMap, toSummary, arr, num, pick, str } from "./normalize";
+import { errorInfo, toDetail, toDrafts, toFilters, toHealth, toJobs, toMap, toSummary, arr, num, pick, str } from "./normalize";
 import { cleanSnapshot, snapshotMeta } from "./snapshot";
 import { applyTool, runsFromTool, toolEnrich, type ToolResult } from "./tool";
 import {
@@ -13,12 +13,24 @@ const LEVEL_RANGE: Record<Level, [number, number]> = { HIGH: [75, 100], MEDIUM: 
 const ERROR_TEXT: Record<string, string> = {
   EMAIL_PROVIDER_NOT_CONFIGURED: "Er is geen e-mailserver ingesteld. Het concept is bewaard, maar niet verzonden.",
   EMAIL_NOT_APPROVED: "Deze e-mail is nog niet goedgekeurd.",
+  DRAFT_NOT_APPROVED: "Deze e-mail is nog niet goedgekeurd.",
+  DRAFT_ALREADY_SENT: "Deze e-mail is al verzonden.",
+  NO_RECIPIENT: "Vul eerst een ontvanger in.",
+  AI_NOT_CONFIGURED: "AI-concepten zijn niet beschikbaar (geen OpenAI-sleutel in de backend).",
+  BUSINESS_NOT_FOUND: "Onderneming niet gevonden.",
 };
+const DRAFT_BATCH = 20; // backend limit per draft request
+const AI_DRAFT_TIMEOUT_MS = 180_000; // the backend writes each AI draft with a model call
+
+function describe(code: string): string {
+  if (code.startsWith("SMTP_SEND_FAILED")) return "Verzenden via de e-mailserver is mislukt.";
+  return ERROR_TEXT[code] ?? code;
+}
 
 export function queryString(q: BusinessQuery, paging = true): string {
   const p = new URLSearchParams();
   if (q.query) p.set("query", q.query);
-  if (q.category) p.set("category", q.category);
+  if (q.sector) p.set("sector", q.sector);
   if (q.street) p.set("street", q.street);
   if (q.recordType) p.set("record_type", q.recordType);
   if (q.legalStatus) p.set("legal_status", q.legalStatus);
@@ -89,6 +101,9 @@ export function createHttpSource(baseUrl: string): DataSource {
         headers: { "Content-Type": "application/json", Accept: "application/json", ...(init?.headers ?? {}) },
       });
     } catch {
+      if (controller.signal.aborted) {
+        throw new ApiError(`De backend antwoordde niet binnen ${Math.round((init?.timeoutMs ?? 30_000) / 1000)} s.`, 0, "TIMEOUT");
+      }
       throw new ApiError("De backend is niet bereikbaar.", 0, "NETWORK_ERROR");
     } finally {
       window.clearTimeout(timer);
@@ -108,8 +123,8 @@ export function createHttpSource(baseUrl: string): DataSource {
     return data;
   }
 
-  const post = (path: string, body?: unknown) =>
-    request(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+  const post = (path: string, body?: unknown, timeoutMs?: number) =>
+    request(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body), timeoutMs });
 
   function firstDraft(data: unknown, id: string): EmailDraft {
     const draft = toDrafts(data)[0];
@@ -186,14 +201,36 @@ export function createHttpSource(baseUrl: string): DataSource {
       return { via: "browser", datasetName: snapshotMeta.name, retrievedOn: snapshotMeta.retrievedOn, cleaning, backend: null };
     },
 
+    async jobs() {
+      try {
+        return toJobs(await request("/api/admin/jobs?limit=5"));
+      } catch (error) {
+        if (error instanceof ApiError && MISSING_ENDPOINT.includes(error.status)) return null;
+        throw error;
+      }
+    },
+
+    async runNightly(enrichLimit) {
+      const qs = enrichLimit === undefined ? "" : `?enrich_limit=${enrichLimit}`;
+      await request(`/api/admin/jobs/nightly/run${qs}`, { method: "POST" });
+    },
+
     async draftEmails(req) {
-      const data = await post("/api/emails/draft", {
-        business_ids: req.businessIds,
-        language: req.language,
-        purpose: req.purpose,
-        instructions: req.instructions || undefined,
-      });
-      return toDrafts(data);
+      const drafts: EmailDraft[] = [];
+      const errors: string[] = [];
+      for (let i = 0; i < req.businessIds.length; i += DRAFT_BATCH) {
+        const data = await post("/api/emails/draft", {
+          business_ids: req.businessIds.slice(i, i + DRAFT_BATCH),
+          language: req.language,
+          purpose: req.purpose,
+          instructions: req.instructions || undefined,
+        }, AI_DRAFT_TIMEOUT_MS);
+        drafts.push(...toDrafts(pick(data, "drafts") ?? data));
+        errors.push(...arr(pick(data, "errors")).map((e) => `${str(pick(e, "business_id")) ?? "?"}: ${describe(str(pick(e, "error")) ?? "fout")}`));
+      }
+      if (!drafts.length && errors.length) throw new ApiError(errors[0].split(": ").slice(1).join(": "), 422);
+      if (errors.length) console.warn("Geen concept voor:", errors);
+      return drafts;
     },
 
     async updateEmail(id, patch) {
@@ -211,7 +248,10 @@ export function createHttpSource(baseUrl: string): DataSource {
     },
 
     async sendEmail(id) {
-      return firstDraft(await post(`/api/emails/${encodeURIComponent(id)}/send`), id);
+      const data = await post(`/api/emails/${encodeURIComponent(id)}/send`);
+      const code = str(pick(data, "error"));
+      if (code) throw new ApiError(describe(code), 409, code);
+      return firstDraft(data, id);
     },
   };
   return api;
