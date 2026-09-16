@@ -10,3 +10,4 @@ backend/data/incoming/*
 .design-reference/
 __pycache__/
 *.pyc
+*.tsbuildinfo
