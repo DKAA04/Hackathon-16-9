@@ -125,10 +125,10 @@ def target_from_row(row: dict[str, Any]) -> EnrichTarget | None:
                 return value
         return None
 
-    record_id = _number(get("ondernemingsnr", "record_id", "enterprise_number", "ondernemingsnummer", "kbo"))
+    record_id = _number(get("ondernemingsnr", "business_number", "record_id", "enterprise_number", "ondernemingsnummer", "kbo"))
     parent = _number(get("ondernemingsnr_maatsch_zetel", "parent_enterprise_number"))
-    name = get("maatschappelijke_naam", "name", "naam", "company_name")
-    trade_name = get("commerciele_naam", "trade_name", "handelsnaam", "afgekorte_naam")
+    name = get("maatschappelijke_naam", "legal_name", "name", "naam", "company_name")
+    trade_name = get("commerciele_naam", "commercial_name", "trade_name", "handelsnaam", "afgekorte_naam", "short_name")
     if not (name or trade_name):
         return None
     is_establishment = bool(parent) or (record_id or "").startswith("2")
@@ -138,15 +138,15 @@ def target_from_row(row: dict[str, Any]) -> EnrichTarget | None:
         trade_name=trade_name if trade_name and trade_name != name else None,
         enterprise_number=parent if is_establishment else record_id,
         is_establishment=is_establishment,
-        street=get("kbo_straat", "ar_straat", "street", "straat"),
-        house_number=get("kbo_huisnr", "ar_huisnr", "house_number", "huisnummer", "huisnr"),
-        postcode=get("kbo_postcode", "ar_postcode", "postcode", "postal_code"),
-        municipality=get("kbo_gemeente", "municipality", "gemeente", "city"),
+        street=get("kbo_straat", "kbo_street", "ar_straat", "address_register_street", "street", "straat"),
+        house_number=get("kbo_huisnr", "kbo_house_number", "ar_huisnr", "address_register_house_number", "house_number", "huisnummer", "huisnr"),
+        postcode=get("kbo_postcode", "ar_postcode", "address_register_postcode", "postcode", "postal_code"),
+        municipality=get("kbo_gemeente", "kbo_municipality", "municipality", "gemeente", "city"),
         lat=_float(get("latitude", "lat")),
         lon=_float(get("longitude", "lon", "lng")),
         known_phone=get("telefoonnummer", "phone", "telefoon"),
         known_email=get("email", "e-mail", "mail"),
         known_website=get("website", "webadres", "url"),
-        activity=get("omschrijving_hoofdact_rsz", "omschrijving_hoofdact_btw", "activity"),
+        activity=get("omschrijving_hoofdact_rsz", "omschrijving_hoofdact_btw", "nace_rsz_description", "nace_vat_description", "activity"),
         flags=red_flags(r),
     )
