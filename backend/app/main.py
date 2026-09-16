@@ -13,7 +13,7 @@ except ImportError:  # optional dependency — fall back to certifi bundle
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, businesses, email, enrichment, legacy, map as map_api
+from app.api import admin, businesses, email, enrichment, legacy, map as map_api, query
 from app.config import settings
 from app.db.database import SessionLocal, init_db
 from app.db.models import Business, Enrichment
@@ -44,6 +44,7 @@ app.include_router(businesses.router)
 app.include_router(map_api.router)
 app.include_router(enrichment.router)
 app.include_router(email.router)
+app.include_router(query.router)
 app.include_router(admin.router)
 app.include_router(legacy.router)
 

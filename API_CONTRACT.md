@@ -382,6 +382,39 @@ Query params: `status`, `business_id`, `limit`, `offset` →
 ### GET /api/emails/{id}
 Single draft with full event history.
 
-## Planned (P3 — not implemented yet)
+## POST /api/query — natural-language search
 
-Optional `POST /api/query` natural-language filter parsing.
+Converts an officer's sentence (Dutch or English) into **validated filters**
+and runs the normal business query. The model never generates SQL; only
+allowlisted filter fields reach the database, unknown fields are discarded
+(reported in `ignored_fields`), enum values are strictly validated and
+`limit` is clamped.
+
+Request: `{"query": "show establishments in Paalstraat that appear operational but have no email"}`
+
+Response:
+
+```json
+{
+  "original_query": "...",
+  "interpreted_filters": {
+    "street": "Paalstraat",
+    "record_type": "ESTABLISHMENT",
+    "google_status": "OPERATIONAL",
+    "has_email": false
+  },
+  "ignored_fields": [],
+  "results": [ ...same summary objects as /api/businesses... ],
+  "total": 1, "limit": 50, "offset": 0
+}
+```
+
+Allowed filter fields: `query`, `street`, `postcode`, `municipality`,
+`record_type`, `legal_status`, `has_email`, `has_phone`, `has_website`,
+`google_status`, `review_required`, `confidence_min`, `confidence_max`,
+`limit` (max 100), `offset`.
+
+Errors:
+- 503 `{"detail": {"error": "AI_NOT_CONFIGURED"}}` — no OpenAI key (normal
+  `/api/businesses` filtering keeps working)
+- 422 `{"detail": {"error": "INVALID_INTERPRETATION" | "AI_INTERPRETATION_FAILED", "message": "..."}}`
