@@ -1,5 +1,15 @@
 import logging
 
+# Use the OS certificate store for outbound TLS (verification stays ON).
+# Needed on machines where antivirus/proxy (e.g. AVG Web Shield) re-signs
+# HTTPS traffic with a CA that is trusted by Windows but absent from certifi.
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:  # optional dependency — fall back to certifi bundle
+    pass
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

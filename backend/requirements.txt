@@ -13,3 +13,4 @@ sqlalchemy
 httpx
 beautifulsoup4
 pytest
+truststore
