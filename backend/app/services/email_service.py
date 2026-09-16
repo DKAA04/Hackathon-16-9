@@ -93,7 +93,10 @@ def _smtp_send(recipient: str, subject: str, body: str) -> None:
     message["Subject"] = subject
     message.set_content(body)
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+    # 30s: AV/proxy interceptors (e.g. AVG Mail Shield) can take >15s to
+    # deliver their real error response; a shorter timeout masks it as a
+    # generic disconnect.
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
         server.ehlo()
         try:
             server.starttls()
