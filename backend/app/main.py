@@ -18,6 +18,7 @@ from app.config import settings
 from app.db.database import SessionLocal, init_db
 from app.db.models import Business, Enrichment
 from app.services.kbo_import import load_metadata, run_import
+from app.services.nightly_job import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +64,12 @@ def startup() -> None:
         logger.error("Initial import failed: %s", exc)
     finally:
         db.close()
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    stop_scheduler()
 
 
 @app.get("/api/health")

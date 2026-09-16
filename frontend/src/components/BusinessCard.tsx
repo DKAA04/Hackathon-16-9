@@ -116,6 +116,13 @@ export function BusinessCard({ source, id, selected, onClose, onOpen, onToggleSe
         </div>
         <h2>{d.displayName}</h2>
         <p className="muted">{d.kboAddress || "adres onbekend"}</p>
+        {d.sectorMatches.length > 0 && (
+          <ul className="sector-tags" aria-label="Sector">
+            {d.sectorMatches.map((m) => (
+              <li key={m.value}><strong>{m.label}</strong><span>{m.reason}</span></li>
+            ))}
+          </ul>
+        )}
         <div className="card-status">
           <ConfidenceBadge level={d.confidenceLevel} score={d.confidenceScore} review={d.reviewRequired} />
           <span className="updated"><Clock size={13} /> Laatst bijgewerkt {formatDate(d.lastUpdated, true)}

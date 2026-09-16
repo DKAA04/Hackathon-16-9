@@ -27,9 +27,9 @@ function useDebounced<T>(value: T, ms: number): T {
 
 function toSummary(d: BusinessDetail): BusinessSummary {
   const { id, businessNumber, parentEnterpriseNumber, recordType, displayName, address, street, lat, lon, legalStatus,
-    email, hasEmail, hasPhone, hasWebsite, googleStatus, confidenceScore, confidenceLevel, reviewRequired, lastUpdated } = d;
+    email, hasEmail, hasPhone, hasWebsite, googleStatus, confidenceScore, confidenceLevel, reviewRequired, lastUpdated, sectors } = d;
   return { id, businessNumber, parentEnterpriseNumber, recordType, displayName, address, street, lat, lon, legalStatus,
-    email, hasEmail, hasPhone, hasWebsite, googleStatus, confidenceScore, confidenceLevel, reviewRequired, lastUpdated };
+    email, hasEmail, hasPhone, hasWebsite, googleStatus, confidenceScore, confidenceLevel, reviewRequired, lastUpdated, sectors };
 }
 
 // The splash stays up at least this long so it is readable in the demo; ?nosplash skips it.
@@ -216,7 +216,7 @@ export default function App() {
           <span className={`mode ${source.mode}`} title={conn.notice ?? "Verbonden met de backend"}>
             <i /> {source.mode === "api" ? "Live backend" : "Demodata"}
           </span>
-          <button type="button" onClick={() => setPanel("pipeline")}><Database size={15} /> Data-pijplijn</button>
+          <button type="button" onClick={() => setPanel("pipeline")}><Database size={15} /> Beheer</button>
         </div>
       </header>
 

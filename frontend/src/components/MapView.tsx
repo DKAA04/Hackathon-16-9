@@ -21,7 +21,11 @@ function FitToPoints({ points, fitKey }: { points: MapPoint[]; fitKey: string })
   const map = useMap();
   useEffect(() => {
     if (!points.length) return;
-    const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lon] as [number, number]));
+    // ignore stray coordinates (some register points lie far outside the municipality)
+    const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+    const center = L.latLng(median(points.map((p) => p.lat)), median(points.map((p) => p.lon)));
+    const near = points.filter((p) => center.distanceTo([p.lat, p.lon]) <= 12_000);
+    const bounds = L.latLngBounds((near.length ? near : points).map((p) => [p.lat, p.lon] as [number, number]));
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
     // only when the filter changes, not when a marker changes colour
   }, [fitKey, points.length > 0]);

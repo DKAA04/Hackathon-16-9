@@ -3,10 +3,12 @@
 import { addressLine, formatDate, formatRegistryNumber, latest } from "../lib/format";
 import { isCoOwnership, type CleanRecord } from "./cleaning";
 import { cleanSnapshot, snapshotMeta } from "./snapshot";
+import { SECTOR_RULES, classifySectors } from "./sectors";
 import { evidenceFromTool, runsFromTool, stampsFromTool, toolEnrich, type ToolFinding, type ToolResult } from "./tool";
 import {
   ApiError, type BusinessDetail, type BusinessQuery, type BusinessSummary, type ContactValue, type DataSource,
   type EmailDraft, type EvidenceReason, type Facet, type Language, type Level, type Purpose, type RecordType,
+  type SectorMatch,
 } from "./types";
 
 const KBO_ENTERPRISE_URL = "https://kbopub.economie.fgov.be/kbopub/toonondernemingps.html?lang=nl&ondernemingsnummer=";
@@ -170,6 +172,16 @@ export async function createDemoSource(): Promise<DataSource> {
   const drafts = loadDrafts();
   const details = new Map<string, BusinessDetail>();
 
+  const sectorCache = new Map<string, SectorMatch[]>();
+  const sectorsOf = (r: CleanRecord): SectorMatch[] => {
+    let matches = sectorCache.get(r.business_number);
+    if (!matches) {
+      matches = classifySectors({ names: [r.commercial_name, r.legal_name, r.short_name], legalForm: r.legal_form,
+        naceCode: r.nace_code, naceDescription: r.nace_description });
+      sectorCache.set(r.business_number, matches);
+    }
+    return matches;
+  };
   const nameOf = (r: CleanRecord) => r.commercial_name ?? r.legal_name ?? r.short_name ?? "(naam onbekend)";
 
   function detailOf(r: CleanRecord): BusinessDetail {
@@ -237,6 +249,8 @@ export async function createDemoSource(): Promise<DataSource> {
       legalForm: r.legal_form,
       businessType: r.business_type,
       activity: r.nace_description,
+      sectorMatches: sectorsOf(r),
+      sectors: sectorsOf(r).map((m) => m.value),
       employeeClass: r.employee_class,
       registrationDate: r.registration_date,
       startDate: r.start_date,
@@ -271,7 +285,7 @@ export async function createDemoSource(): Promise<DataSource> {
       lat: d.lat, lon: d.lon, legalStatus: d.legalStatus, email: d.email, hasEmail: d.hasEmail,
       hasPhone: d.hasPhone, hasWebsite: d.hasWebsite, googleStatus: d.googleStatus,
       confidenceScore: d.confidenceScore, confidenceLevel: d.confidenceLevel,
-      reviewRequired: d.reviewRequired, lastUpdated: d.lastUpdated,
+      reviewRequired: d.reviewRequired, lastUpdated: d.lastUpdated, sectors: d.sectors,
     };
   }
 
@@ -293,12 +307,7 @@ export async function createDemoSource(): Promise<DataSource> {
         const numberHit = digits.length >= 4 && (r.business_number.includes(digits) || (r.parent_enterprise_number ?? "").includes(digits));
         if (!haystack.includes(needle) && !numberHit) return false;
       }
-      if (q.category === "bakery") {
-        // Transparent demo taxonomy; production backend will use NACE + reviewed aliases.
-        const bakeryWords = ["bakker", "bakery", "boulanger", "patis", "brood", "taart", "pastry"];
-        const haystack = normalize([s.displayName, r.legal_name, r.commercial_name, r.nace_description].join(" "));
-        if (!bakeryWords.some((word) => haystack.includes(word))) return false;
-      }
+      if (q.sector && !s.sectors.includes(q.sector)) return false;
       return true;
     });
   }
@@ -349,6 +358,11 @@ export async function createDemoSource(): Promise<DataSource> {
         recordTypes: facet<RecordType>(records.map((r) => r.record_type)),
         legalStatuses: facet(records.map((r) => r.legal_status)).sort((a, b) => (b.count ?? 0) - (a.count ?? 0)),
         googleStatuses: [],
+        sectors: SECTOR_RULES.map((rule) => ({
+          value: rule.key,
+          label: rule.label,
+          count: records.filter((r) => sectorsOf(r).some((m) => m.value === rule.key)).length,
+        })),
       };
     },
 
@@ -408,6 +422,14 @@ export async function createDemoSource(): Promise<DataSource> {
     async runImport() {
       const { report } = await cleanSnapshot();
       return { via: "browser", datasetName: snapshotMeta.name, retrievedOn: snapshotMeta.retrievedOn, cleaning: report, backend: null };
+    },
+
+    async jobs() {
+      return null; // the nightly job runs in the backend
+    },
+
+    async runNightly() {
+      throw new ApiError("De nachtelijke taak draait in de backend; start de backend om ze uit te voeren.", 501);
     },
 
     async draftEmails({ businessIds, language, purpose, instructions }) {

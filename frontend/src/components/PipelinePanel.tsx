@@ -1,10 +1,16 @@
-import { CheckCircle2, Clock3, Database, Play, ShieldCheck, X } from "lucide-react";
-import { useState } from "react";
-import type { DataSource, ImportReport } from "../api/types";
+import { AlertTriangle, CheckCircle2, Clock3, Database, Play, X, XCircle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { DataSource, ImportReport, JobRunInfo, JobsInfo } from "../api/types";
 import { formatCount, formatDate } from "../lib/format";
 import { Spinner, errorText } from "./ui";
 
-const STEP_DELAY_MS = 450; // readable pace for the demo; the counts themselves are computed live
+const POLL_MS = 1500;
+const MANUAL_ENRICH_LIMIT = 5; // keeps a manual run short enough to show live
+const STEP_DELAY_MS = 450; // browser fallback: readable pace, counts are computed live
+
+const STEP_LABEL: Record<string, string> = {
+  import: "Import", opschoning: "Opschoning", registersignalen: "Registersignalen", sectoren: "Sectoren", verrijking: "Verrijking",
+};
 
 interface Props {
   source: DataSource;
@@ -12,61 +18,65 @@ interface Props {
   onImported: () => void;
 }
 
-function steps(r: ImportReport): Array<{ title: string; lines: string[] }> {
+function duration(run: JobRunInfo): string {
+  if (!run.startedAt || !run.finishedAt) return "";
+  const seconds = (new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000;
+  return seconds < 90 ? `${seconds.toFixed(0)} s` : `${(seconds / 60).toFixed(1)} min`;
+}
+
+function time(value: string | null): string {
+  if (!value) return "";
+  return new Date(value).toLocaleTimeString("nl-BE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function RunStatus({ status }: { status: string }) {
+  if (status === "running") return <Spinner size={15} />;
+  if (status === "success") return <CheckCircle2 size={15} className="ok" aria-label="voltooid" />;
+  return <XCircle size={15} className="bad" aria-label="mislukt" />;
+}
+
+function JobRuns({ jobs }: { jobs: JobsInfo }) {
+  if (!jobs.runs.length) return <p className="muted">Nog geen uitvoeringen. De eerste geplande run is {formatDate(jobs.nextRunAt, true)}.</p>;
+  return (
+    <ol className="runs-list">
+      {jobs.runs.map((run, i) => (
+        <li key={run.id} className={`run ${run.status}`}>
+          <details open={i === 0}>
+            <summary>
+              <RunStatus status={run.status} />
+              <strong>{formatDate(run.startedAt, true)}</strong>
+              <span>{run.trigger === "schedule" ? "geplande taak" : "handmatig"}</span>
+              <em>{run.status === "running" ? "bezig…" : run.status === "success" ? `voltooid · ${duration(run)}` : "mislukt"}</em>
+            </summary>
+            <ul className="run-log">
+              {run.log.map((line, j) => (
+                <li key={j} className={line.level}>
+                  <time>{time(line.at)}</time>
+                  {line.level === "warning" ? <AlertTriangle size={12} /> : line.level === "error" ? <XCircle size={12} /> : <span className="dot" />}
+                  <span>{line.message}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function browserSteps(r: ImportReport): Array<{ title: string; lines: string[] }> {
   const c = r.cleaning;
   const n = (v: number | null | undefined) => formatCount(v ?? 0);
   return [
-    {
-      title: "Ruwe KBO-momentopname ingelezen",
-      lines: [
-        `${n(c?.rawRows)} records uit ${r.datasetName}`,
-        `opgehaald op ${formatDate(r.retrievedOn)} · bronbestand blijft onaangeroerd`,
-      ],
-    },
-    {
-      title: "Opgeschoond",
-      lines: [
-        `${n(c?.blankValues)} lege velden (alleen spaties) leeggemaakt`,
-        `${n(c?.placeholderDates)} nepdatums (1900-01-01 / 9999-12-31) als "niet ingevuld" gelezen`,
-        "ondernemingsnummers als tekst bewaard: voorloopnullen blijven staan",
-      ],
-    },
-    {
-      title: "Onderneming of vestiging",
-      lines: [
-        `${n(c?.enterprises)} ondernemingen (juridische entiteit)`,
-        `${n(c?.establishments)} vestigingen, gekoppeld aan hun hoofdzetel`,
-        `${n(c?.parentsInDataset)} vestigingen hebben hun hoofdzetel in deze dataset`,
-      ],
-    },
-    {
-      title: "Signalen uit het register",
-      lines: [
-        `${n(c?.exOfficio)} ambtshalve doorgehaald`,
-        `${n(c?.abnormalLegalStatus)} met een afwijkende rechtstoestand (vereffening, faillissement…)`,
-        `${n(c?.addressDeregistered)} met een doorgehaald adres`,
-        `${n(c?.notInAddressRegister)} adressen niet gevonden in het Adressenregister`,
-      ],
-    },
-    {
-      title: "Plausibiliteit",
-      lines: [
-        `${n(c?.outOfArea)} records met coördinaten buiten de gemeente (niet op de kaart)`,
-        `${n(c?.coOwnership)} verenigingen van mede-eigenaars: geen handelszaak`,
-      ],
-    },
-    {
-      title: "Klaar voor verrijking",
-      lines: [
-        `contact in de KBO: ${n(c?.withPhone)} telefoonnummers · ${n(c?.withEmail)} e-mailadressen`,
-        "de rest zoeken we via OpenStreetMap, eigen websites en Google Maps",
-        `klaar in ${n(c?.durationMs)} ms · dezelfde stappen werken voor elke Vlaamse gemeente`,
-      ],
-    },
+    { title: "Ruwe KBO-momentopname ingelezen", lines: [`${n(c?.rawRows)} records uit ${r.datasetName}`, `opgehaald op ${formatDate(r.retrievedOn)}`] },
+    { title: "Opgeschoond", lines: [`${n(c?.blankValues)} lege velden leeggemaakt`, `${n(c?.placeholderDates)} nepdatums (1900/9999) genegeerd`] },
+    { title: "Onderneming of vestiging", lines: [`${n(c?.enterprises)} ondernemingen · ${n(c?.establishments)} vestigingen · ${n(c?.parentsInDataset)} met hoofdzetel in de dataset`] },
+    { title: "Registersignalen", lines: [`${n(c?.exOfficio)} ambtshalve doorgehaald · ${n(c?.abnormalLegalStatus)} afwijkende rechtstoestand · ${n(c?.addressDeregistered)} adres doorgehaald · ${n(c?.notInAddressRegister)} adres niet in Adressenregister`] },
+    { title: "Plausibiliteit", lines: [`${n(c?.outOfArea)} coördinaten buiten de gemeente · ${n(c?.coOwnership)} verenigingen van mede-eigenaars`] },
   ];
 }
 
-export function PipelinePanel({ source, onClose, onImported }: Props) {
+function BrowserCleaning({ source, onImported }: { source: DataSource; onImported: () => void }) {
   const [report, setReport] = useState<ImportReport | null>(null);
   const [shown, setShown] = useState(0);
   const [running, setRunning] = useState(false);
@@ -79,7 +89,7 @@ export function PipelinePanel({ source, onClose, onImported }: Props) {
     try {
       const result = await source.runImport();
       setReport(result);
-      for (let i = 1; i <= steps(result).length; i++) {
+      for (let i = 1; i <= browserSteps(result).length; i++) {
         await new Promise((resolve) => setTimeout(resolve, STEP_DELAY_MS));
         setShown(i);
       }
@@ -91,66 +101,131 @@ export function PipelinePanel({ source, onClose, onImported }: Props) {
     }
   }
 
-  const list = report ? steps(report) : [];
+  const steps = report ? browserSteps(report) : [];
+  return (
+    <>
+      <p className="notice warn">
+        <AlertTriangle size={14} />
+        <span>Geen backend verbonden: de nachtelijke taak en haar logboek draaien in de backend. Hieronder dezelfde opschoning, in de browser.</span>
+      </p>
+      <ol className="pipeline">
+        {steps.map((step, i) => (
+          <li key={step.title} className={i < shown ? "done" : "todo"}>
+            {i < shown ? <CheckCircle2 size={16} className="ok" /> : <Spinner size={15} />}
+            <div><strong>{step.title}</strong>{i < shown && step.lines.map((line) => <span key={line}>{line}</span>)}</div>
+          </li>
+        ))}
+      </ol>
+      {error && <div className="notice error">{error}</div>}
+      <div className="modal-actions">
+        <button type="button" className="primary" onClick={run} disabled={running}>
+          {running ? <Spinner /> : <Play size={15} />} Opschoning uitvoeren
+        </button>
+      </div>
+    </>
+  );
+}
+
+export function PipelinePanel({ source, onClose, onImported }: Props) {
+  const [jobs, setJobs] = useState<JobsInfo | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [watching, setWatching] = useState(false);
+  const importedRef = useRef(onImported);
+  importedRef.current = onImported;
+
+  const refresh = useCallback(async () => {
+    try {
+      const info = await source.jobs();
+      setJobs(info);
+      return info;
+    } catch (e) {
+      setError(errorText(e));
+      return null;
+    }
+  }, [source]);
+
+  useEffect(() => {
+    refresh().then((info) => info?.running && setWatching(true));
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!watching) return;
+    const timer = window.setInterval(async () => {
+      const info = await refresh();
+      if (info && !info.running) {
+        setWatching(false);
+        importedRef.current();
+      }
+    }, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [watching, refresh]);
+
+  async function runNow() {
+    setStarting(true);
+    setError(null);
+    try {
+      await source.runNightly(MANUAL_ENRICH_LIMIT);
+      await refresh();
+      setWatching(true);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  const busy = starting || watching || !!jobs?.running;
 
   return (
-    <div className="modal-backdrop" onClick={running ? undefined : onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label="Data-pijplijn" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal wide" role="dialog" aria-modal="true" aria-label="Beheer" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <div>
-            <small>DATA-PIJPLIJN</small>
-            <h2><Database size={18} /> Importeren en opschonen</h2>
+            <small>BEHEER</small>
+            <h2><Database size={18} /> Nachtelijke data-taak</h2>
           </div>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Sluiten" disabled={running}><X size={17} /></button>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Sluiten"><X size={17} /></button>
         </header>
         <p className="muted">
-          Elke nacht verwerkt een geplande taak de nieuwe registermomentopname. Brongegevens worden nooit overschreven:
-          opschoning, verrijking en correcties worden apart bewaard.
+          Medewerkers hoeven niets te starten: elke nacht leest de backend de KBO-momentopname opnieuw in, schoont ze op,
+          markeert registersignalen en sectoren, en verrijkt nieuwe records via Google Maps en hun eigen website.
+          Brongegevens worden nooit overschreven.
         </p>
 
-        <section className="schedule-card">
-          <div><Clock3 size={18} /><span><small>GEPLANDE TAAK</small><strong>Elke werkdag · 02:15</strong></span></div>
-          <p>Import → opschonen → signalen → alleen gewijzigde records verrijken → auditlog. Medewerkers hoeven niets te starten.</p>
-          <span className="schedule-next"><ShieldCheck size={13} /> Volgende uitvoering: vannacht om 02:15</span>
-        </section>
+        {jobs === undefined && !error && <div className="loading"><Spinner /> Planning laden…</div>}
 
-        <section className="job-log" aria-label="Recente taakuitvoeringen">
-          <header><small>RECENTE UITVOERINGEN</small><span>auditlog</span></header>
-          <div><span className="job-ok" /> Vandaag 02:15 · KBO import & opschoning · voltooid</div>
-          <div><span className="job-ok" /> Gisteren 02:15 · gewijzigde contacten verrijkt · voltooid</div>
-          <div><span className="job-wait" /> Nu uitvoeren is een handmatige controle, geen vervanging van de planning</div>
-        </section>
-
-        <ol className="pipeline">
-          {list.map((step, i) => (
-            <li key={step.title} className={i < shown ? "done" : "todo"}>
-              {i < shown ? <CheckCircle2 size={16} className="ok" /> : running ? <Spinner size={15} /> : <span className="dot-wait" />}
+        {jobs && (
+          <>
+            <section className="schedule">
+              <Clock3 size={20} />
               <div>
-                <strong>{step.title}</strong>
-                {i < shown && step.lines.map((line) => <span key={line}>{line}</span>)}
+                <small>PLANNING</small>
+                <strong>{jobs.enabled ? `Elke nacht om ${jobs.time}` : "Uitgeschakeld"}</strong>
+                <span>
+                  {jobs.enabled && `volgende run ${formatDate(jobs.nextRunAt, true)} · `}
+                  {jobs.timezone} · max {jobs.enrichLimit ?? "?"} verrijkingen per nacht
+                </span>
               </div>
-            </li>
-          ))}
-          {!report && !running && <li className="todo"><span className="dot-wait" /><div><strong>Nog niet gestart</strong></div></li>}
-        </ol>
-
-        {report?.backend && shown >= list.length && (
-          <p className="notice safe">
-            Backend-import: {formatCount(report.backend.inserted ?? 0)} nieuw · {formatCount(report.backend.updated ?? 0)} bijgewerkt ·{" "}
-            {formatCount(report.backend.skipped ?? 0)} overgeslagen · {formatCount(report.backend.errors ?? 0)} fouten
-          </p>
+              <div className="steps">
+                {jobs.steps.map((s, i) => <span key={s}>{i > 0 && "→ "}{STEP_LABEL[s] ?? s}</span>)}
+              </div>
+            </section>
+            <h3 className="section-label">Recente uitvoeringen <em>logboek uit de database</em></h3>
+            <JobRuns jobs={jobs} />
+            {error && <div className="notice error">{error}</div>}
+            <div className="modal-actions">
+              <span className="muted small">Handmatige run: zelfde stappen, max {MANUAL_ENRICH_LIMIT} verrijkingen.</span>
+              <button type="button" onClick={onClose}>Sluiten</button>
+              <button type="button" className="primary" onClick={runNow} disabled={busy}>
+                {busy ? <Spinner /> : <Play size={15} />} {busy ? "Taak loopt…" : "Nu uitvoeren"}
+              </button>
+            </div>
+          </>
         )}
-        {report?.via === "browser" && shown >= list.length && (
-          <p className="muted small">Opgeschoond in de browser met dezelfde regels als de backend-import.</p>
-        )}
-        {error && <div className="notice error">{error}</div>}
 
-        <div className="modal-actions">
-          <button type="button" onClick={onClose} disabled={running}>Sluiten</button>
-          <button type="button" className="primary" onClick={run} disabled={running}>
-            {running ? <Spinner /> : <Play size={15} />} {report ? "Nu opnieuw uitvoeren" : "Eenmalig nu uitvoeren"}
-          </button>
-        </div>
+        {jobs === null && <BrowserCleaning source={source} onImported={onImported} />}
+        {jobs === undefined && error && <div className="notice error">{error}</div>}
       </div>
     </div>
   );

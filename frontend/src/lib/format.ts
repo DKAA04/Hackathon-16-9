@@ -7,7 +7,10 @@ const dateTimeFormat = new Intl.DateTimeFormat("nl-BE", {
 const numberFormat = new Intl.NumberFormat("nl-BE");
 
 function toDate(value: string): Date {
-  return new Date(value.length === 10 ? `${value}T00:00:00` : value);
+  if (value.length === 10) return new Date(`${value}T00:00:00`);
+  // the backend stores UTC without an offset: read it as UTC, not local time
+  const naive = /T\d{2}:\d{2}/.test(value) && !/(Z|[+-]\d{2}:?\d{2})$/.test(value);
+  return new Date(naive ? `${value}Z` : value);
 }
 
 export function formatDate(value: string | null | undefined, withTime = false): string {

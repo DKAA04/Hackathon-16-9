@@ -3,8 +3,13 @@ import type { BusinessSummary, FilterOptions, Level, RecordType } from "../api/t
 import { formatCount } from "../lib/format";
 import { ConfidenceBadge, ContactIcons, Segmented, Spinner, TriToggle, TypeChip } from "./ui";
 
+const QUICK_SECTORS = ["bakkerij", "horeca", "zorg", "kapper", "winkel"];
+const SECTOR_ICON: Record<string, string> = {
+  bakkerij: "🥖", horeca: "🍽️", zorg: "🩺", kapper: "💇", bouw: "🔧", auto: "🚗", winkel: "🛍️", advies: "💼",
+};
+
 export interface Filters {
-  category?: "bakery";
+  sector?: string;
   street?: string;
   recordType?: RecordType;
   legalStatus?: string;
@@ -52,12 +57,28 @@ export function Sidebar(p: Props) {
           <Segmented<RecordType> label="Type" value={p.filters.recordType} onChange={(v) => set({ recordType: v })}
             options={[{ value: undefined, label: "Alle" }, { value: "ENTERPRISE", label: "Ondernemingen" }, { value: "ESTABLISHMENT", label: "Vestigingen" }]} />
         </div>
-        <div className="quick-filter" aria-label="Snelle sectorfilters">
-          <button type="button" className={p.filters.category === "bakery" ? "on" : ""}
-            onClick={() => set({ category: p.filters.category === "bakery" ? undefined : "bakery" })}>
-            🥖 Bakkerijen
-          </button>
-          {p.filters.category === "bakery" && <span>naam/activiteit bevat bakkerijterm</span>}
+        <div className="sector-filter">
+          <label>
+            <span>Sector / beroep</span>
+            <select value={p.filters.sector ?? ""} onChange={(e) => set({ sector: e.target.value || undefined })}>
+              <option value="">Alle sectoren</option>
+              {p.options?.sectors.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}{s.count !== null ? ` (${s.count})` : ""}</option>
+              ))}
+            </select>
+          </label>
+          <div className="sector-chips" role="group" aria-label="Snelle sectorfilters">
+            {p.options?.sectors.filter((s) => QUICK_SECTORS.includes(s.value)).map((s) => (
+              <button key={s.value} type="button" className={p.filters.sector === s.value ? "on" : ""}
+                aria-pressed={p.filters.sector === s.value}
+                onClick={() => set({ sector: p.filters.sector === s.value ? undefined : s.value })}>
+                <span aria-hidden>{SECTOR_ICON[s.value] ?? ""}</span> {s.label.split(" &")[0]} <b>{s.count ?? ""}</b>
+              </button>
+            ))}
+          </div>
+          {p.filters.sector && (
+            <small className="muted">Herkend op activiteitscode of op woorden in de naam; de ondernemingskaart toont waarom.</small>
+          )}
         </div>
         <div className="filter-row">
           <Segmented<Level> label="Zekerheid" value={p.filters.level} onChange={(v) => set({ level: v })}

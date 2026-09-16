@@ -9,6 +9,7 @@ import json
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.services.sectors import classify as classify_sectors, sector_keys
 from app.db.models import Business, BusinessOverride, Enrichment
 from app.services.evidence import compute_evidence
 
@@ -243,6 +244,7 @@ def build_summary(business: Business, parent: Business | None, enrichment_map: d
         "confidence_score": verdict["confidence_score"],
         "confidence_level": verdict["confidence_level"],
         "review_required": verdict["review_required"],
+        "sectors": [m["value"] for m in classify_sectors(business)],
     }
 
 
@@ -274,6 +276,7 @@ def build_detail(db: Session, business: Business) -> dict:
         },
         "effective": effective,
         "evidence": verdict["evidence"],
+        "sectors": classify_sectors(business),
         "confidence_score": verdict["confidence_score"],
         "confidence_level": verdict["confidence_level"],
         "review_required": verdict["review_required"],
@@ -313,6 +316,8 @@ def query_businesses(db: Session, filters: dict) -> dict:
         query = query.filter(Business.legal_status.ilike(f"%{filters['legal_status']}%"))
 
     rows = query.order_by(Business.display_name).all()
+    if filters.get("sector"):
+        rows = [r for r in rows if filters["sector"] in sector_keys(r)]
 
     ids = [r.id for r in rows]
     enrichment_maps = load_enrichment_map(db, ids)

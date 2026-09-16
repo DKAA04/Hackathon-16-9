@@ -11,6 +11,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 # Use a throwaway DB file for the whole test session (set before app import).
 _tmpdir = tempfile.mkdtemp(prefix="civiclens-test-")
 os.environ["CIVICLENS_DB_PATH"] = str(Path(_tmpdir) / "test.db")
+os.environ["NIGHTLY_ENABLED"] = "false"  # no scheduler threads during tests
 
 from fastapi.testclient import TestClient  # noqa: E402
 
