@@ -11,6 +11,11 @@ const COLOR: Record<Level | "unknown", string> = {
   unknown: "#91a59c",
 };
 const SCHOTEN: [number, number] = [51.2505, 4.5007];
+// CARTO Basemap keys are intended for browser tile requests. Restrict the key to
+// localhost and the deployed domain in CARTO's key dashboard.
+const CARTO_BASEMAP_KEY = import.meta.env.VITE_CARTO_BASEMAP_KEY?.trim();
+const CARTO_DARK_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png";
+const OSM_FALLBACK_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 function FitToPoints({ points, fitKey }: { points: MapPoint[]; fitKey: string }) {
   const map = useMap();
@@ -52,10 +57,12 @@ export function MapView({ data, fitKey, activeId, selectedIds, focus, onOpen, at
     <div className="map-wrap">
       <MapContainer center={SCHOTEN} zoom={14} preferCanvas className="map" zoomControl={false}>
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          url={CARTO_BASEMAP_KEY ? `${CARTO_DARK_URL}?key=${encodeURIComponent(CARTO_BASEMAP_KEY)}` : OSM_FALLBACK_URL}
           subdomains="abcd"
           maxZoom={20}
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bijdragers &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          attribution={CARTO_BASEMAP_KEY
+            ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bijdragers &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bijdragers'}
         />
         <FitToPoints points={data.points} fitKey={fitKey} />
         <FlyTo focus={focus} />
