@@ -1,209 +1,286 @@
-import {
-  Activity, AudioLines, Building2, ChevronRight, Command, Database,
-  Gauge, Search, ShieldCheck, Sparkles, X, Zap
-} from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { checkSupabaseConnection, type SupabaseConnectionState } from "./lib/supabase";
+import { Database, Mail, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { connect, type Connection } from "./api";
+import type { BusinessDetail, BusinessSummary, FilterOptions, MapData } from "./api/types";
+import { BatchEnrich } from "./components/BatchEnrich";
+import { BusinessCard } from "./components/BusinessCard";
+import { MailComposer } from "./components/MailComposer";
+import { MapView } from "./components/MapView";
+import { PipelinePanel } from "./components/PipelinePanel";
+import { Sidebar, type Filters } from "./components/Sidebar";
+import { Spinner, errorText } from "./components/ui";
+import { formatCount, formatDate } from "./lib/format";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const PAGE_SIZE = 50;
+const MUNICIPALITY = import.meta.env.VITE_MUNICIPALITY ?? "Schoten";
+// ?leeg starts with an empty map and the data pipeline open (for the demo video)
+const FRESH_START = new URLSearchParams(window.location.search).has("leeg");
 
-type Evidence = { label: string; value: string; source: string; status: string };
-type Result = {
-  id: string; title: string; subtitle?: string; status: string;
-  confidence: string; confidence_score: number; source_count: number;
-  summary: string; tags: string[]; evidence: Evidence[];
-};
-
-export default function App() {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Result[]>([]);
-  const [elapsed, setElapsed] = useState(0);
-  const [records, setRecords] = useState(0);
-  const [demo, setDemo] = useState(true);
-  const [selected, setSelected] = useState<Result | null>(null);
-  const [palette, setPalette] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [online, setOnline] = useState(true);
-  const [supabaseState, setSupabaseState] = useState<SupabaseConnectionState>("checking");
-
-  const top = useMemo(() => results[0], [results]);
-
-  async function search(next = query, nextDemo = demo) {
-    setLoading(true);
-    try {
-      const r = await fetch(`${API}/api/search`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({query: next, demo_mode: nextDemo})
-      });
-      const data = await r.json();
-      setResults(data.results || []);
-      setElapsed(data.elapsed_ms || 0);
-      setOnline(true);
-    } catch {
-      setOnline(false);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value);
   useEffect(() => {
-    fetch(`${API}/api/health`)
-      .then(r => r.json())
-      .then(h => { setRecords(h.records_loaded || 0); setOnline(true); })
-      .catch(() => setOnline(false));
+    const timer = window.setTimeout(() => setDebounced(value), ms);
+    return () => window.clearTimeout(timer);
+  }, [value, ms]);
+  return debounced;
+}
 
-    search("", true);
+function toSummary(d: BusinessDetail): BusinessSummary {
+  const { id, businessNumber, parentEnterpriseNumber, recordType, displayName, address, street, lat, lon, legalStatus,
+    email, hasEmail, hasPhone, hasWebsite, googleStatus, confidenceScore, confidenceLevel, reviewRequired, lastUpdated } = d;
+  return { id, businessNumber, parentEnterpriseNumber, recordType, displayName, address, street, lat, lon, legalStatus,
+    email, hasEmail, hasPhone, hasWebsite, googleStatus, confidenceScore, confidenceLevel, reviewRequired, lastUpdated };
+}
 
-    checkSupabaseConnection()
-      .then(result => setSupabaseState(result.state))
-      .catch(() => setSupabaseState("error"));
-
-    const key = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault(); setPalette(v => !v);
-      }
-      if (e.key === "Escape") { setPalette(false); setSelected(null); }
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, []);
-
-  function submit(e: FormEvent) { e.preventDefault(); search(); }
-
-  function toggleDemo() {
-    const next = !demo;
-    setDemo(next);
-    search(query, next);
-  }
-
+function SplashScreen() {
   return (
-    <div className="shell">
-      <aside className="rail">
-        <div className="logo">C</div>
-        <Search className="nav active" />
-        <Database className="nav" />
-        <ShieldCheck className="nav" />
-      </aside>
-
-      <main>
-        <header>
-          <div>
-            <small><span className="dot"/> CIVIC INTELLIGENCE CONSOLE</small>
-            <strong>CivicLens <i>/ Antwerp prototype</i></strong>
-          </div>
-          <div className="header-actions">
-            <button className={demo ? "demo on" : "demo"} onClick={toggleDemo}>
-              <Zap size={14}/> Demo {demo ? "ON" : "OFF"}
-            </button>
-            <button onClick={() => setPalette(true)}><Command size={14}/> Ctrl K</button>
-          </div>
-        </header>
-
-        <section className="hero">
-          <div className="kicker"><Sparkles size={15}/> EVIDENCE FIRST. AI SECOND.</div>
-          <h1>Ask the city.<br/><span>See why you should trust the answer.</span></h1>
-          <p>One operational view across fragmented municipal data, with source-level evidence and confidence visible by default.</p>
-
-          <form className="searchbox" onSubmit={submit}>
-            <Search size={21}/>
-            <input value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="Try: active retail businesses in Antwerp..." />
-            <button type="button" className="voice"><AudioLines size={18}/></button>
-            <button type="submit" className="go">{loading ? "..." : "Search"}</button>
-          </form>
-
-          <div className="quick">
-            {["active businesses Antwerp","records needing review","strongest evidence"].map(x =>
-              <button key={x} onClick={() => {setQuery(x); search(x)}}>{x} <ChevronRight size={12}/></button>
-            )}
-          </div>
-        </section>
-
-        <section className="metrics">
-          <Metric icon={<Activity/>} label="SYSTEM" value={online ? "Operational" : "Offline"} good={online}/>
-          <Metric
-            icon={<Database/>}
-            label="SUPABASE"
-            value={
-              supabaseState === "connected" ? "Connected" :
-              supabaseState === "configured" ? "Configured" :
-              supabaseState === "checking" ? "Checking..." :
-              supabaseState === "missing" ? "Not configured" :
-              "Check failed"
-            }
-            good={supabaseState === "connected" || supabaseState === "configured"}
-          />
-          <Metric icon={<ShieldCheck/>} label="EVIDENCE" value="Provenance on" good/>
-          <Metric icon={<Gauge/>} label="LATENCY" value={`${elapsed} ms`}/>
-        </section>
-
-        <section className="grid">
-          <div>
-            <div className="section-title"><small>RESULT SET</small><h2>{results.length} relevant records</h2></div>
-            <div className="stack">
-              {results.map(r => <Card key={r.id} r={r} open={() => setSelected(r)}/>)}
-            </div>
-          </div>
-
-          <aside className="intel">
-            <small>INTELLIGENCE</small><h3>Decision layer</h3>
-            {top && <>
-              <div className="score"><b>{top.confidence_score}</b><div><strong>Confidence</strong><span>Top result</span></div></div>
-              <div className="track"><div className={top.confidence} style={{width:`${top.confidence_score}%`}}/></div>
-              <div className="intel-block"><small>WHY THIS RANKS FIRST</small><p>{top.summary}</p></div>
-              <div className="intel-block"><small>SOURCE COVERAGE {demo ? "• DEMO" : `• ${records} RECORDS`}</small>
-                {top.evidence.slice(0,3).map((e,i)=><div className="source" key={i}><ShieldCheck size={13}/>{e.source}</div>)}
-              </div>
-              <button className="primary" onClick={() => setSelected(top)}>Open evidence trace <ChevronRight size={15}/></button>
-            </>}
-          </aside>
-        </section>
-      </main>
-
-      {selected && <div className="backdrop" onClick={()=>setSelected(null)}>
-        <aside className="drawer" onClick={e=>e.stopPropagation()}>
-          <button className="close" onClick={()=>setSelected(null)}><X size={18}/></button>
-          <small>EVIDENCE TRACE</small><h2>{selected.title}</h2><p className="muted">{selected.subtitle}</p>
-          <div className="verify"><span>Verification confidence</span><strong>{selected.confidence.toUpperCase()} {selected.confidence_score}%</strong></div>
-          <div className="track"><div className={selected.confidence} style={{width:`${selected.confidence_score}%`}}/></div>
-          <div className="timeline">
-            {selected.evidence.map((e,i)=><div className="evidence" key={i}>
-              <b className={e.status}>{i+1}</b>
-              <div><small>{e.label}</small><strong>{e.value}</strong><span>{e.source}</span></div>
-            </div>)}
-          </div>
-          <div className="trust"><ShieldCheck/><div><strong>No invisible reasoning required.</strong><p>Every claim is tied to inspectable source evidence.</p></div></div>
-        </aside>
-      </div>}
-
-      {palette && <div className="backdrop palette-bg" onClick={()=>setPalette(false)}>
-        <div className="palette" onClick={e=>e.stopPropagation()}>
-          <div className="palette-title"><Command size={16}/> Quick actions <kbd>ESC</kbd></div>
-          <button onClick={()=>{setQuery("active businesses Antwerp");search("active businesses Antwerp",true);setPalette(false)}}>
-            <Building2/> <span><strong>Find active businesses</strong><small>Run the primary workflow</small></span><ChevronRight/>
-          </button>
-          <button onClick={()=>{if(top)setSelected(top);setPalette(false)}}>
-            <ShieldCheck/> <span><strong>Open strongest evidence</strong><small>Show the trust chain</small></span><ChevronRight/>
-          </button>
-        </div>
-      </div>}
+    <div className="splash" role="status" aria-live="polite">
+      <img src="/duckduckgov-mascot.png" alt="DuckDuckGov mascotte" />
+      <div className="splash-copy">
+        <strong>DuckDuckGov</strong>
+        <span>Lokale economie, helder in beeld</span>
+      </div>
+      <div className="splash-progress"><i /></div>
+      <small>KBO-momentopname voorbereiden…</small>
     </div>
   );
 }
 
-function Metric({icon,label,value,good}:{icon:any,label:string,value:string,good?:boolean}) {
-  return <div className="metric"><span className={good?"mi good":"mi"}>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></div>
-}
+export default function App() {
+  const [conn, setConn] = useState<Connection | null>(null);
+  const [fatal, setFatal] = useState<string | null>(null);
+  const [imported, setImported] = useState(!FRESH_START);
+  const [options, setOptions] = useState<FilterOptions | null>(null);
+  const [filters, setFilters] = useState<Filters>({});
+  const [search, setSearch] = useState("");
+  const query = useDebounced(search.trim(), 250);
+  const [items, setItems] = useState<BusinessSummary[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [mapData, setMapData] = useState<MapData>({ points: [], skipped: 0 });
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Map<string, BusinessSummary>>(new Map());
+  const [focus, setFocus] = useState<{ lat: number; lon: number; key: number } | null>(null);
+  const [panel, setPanel] = useState<"pipeline" | "mail" | "batch" | null>(FRESH_START ? "pipeline" : null);
+  const [mailTo, setMailTo] = useState<BusinessSummary[]>([]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const requestId = useRef(0);
 
-function Card({r,open}:{r:Result,open:()=>void}) {
-  return <article className="card">
-    <span className="entity"><Building2/></span>
-    <div className="copy">
-      <div className="title"><h3>{r.title}</h3><span className={`badge ${r.confidence}`}>{r.confidence.toUpperCase()} {r.confidence_score}%</span></div>
-      <p className="muted">{r.subtitle}</p><p>{r.summary}</p>
-      <div className="tags">{r.tags.map(x=><span key={x}>{x}</span>)}</div>
+  useEffect(() => {
+    connect().then(setConn).catch((e) => setFatal(errorText(e)));
+  }, []);
+
+  useEffect(() => {
+    if (conn && imported) conn.source.filters().then(setOptions).catch(() => setOptions(null));
+  }, [conn, imported, reloadKey]);
+
+  const businessQuery = useMemo(() => ({ ...filters, query: query || undefined }), [filters, query]);
+  const fitKey = JSON.stringify(businessQuery);
+
+  useEffect(() => {
+    if (!conn || !imported) return;
+    const id = ++requestId.current;
+    setLoading(true);
+    setListError(null);
+    Promise.all([
+      conn.source.businesses({ ...businessQuery, limit: PAGE_SIZE, offset: 0 }),
+      conn.source.map(businessQuery),
+    ])
+      .then(([page, map]) => {
+        if (id !== requestId.current) return;
+        setItems(page.results);
+        setTotal(page.total);
+        setMapData(map);
+      })
+      .catch((e) => id === requestId.current && setListError(errorText(e)))
+      .finally(() => id === requestId.current && setLoading(false));
+  }, [conn, imported, businessQuery, reloadKey]);
+
+  const loadMore = useCallback(() => {
+    if (!conn) return;
+    setLoading(true);
+    conn.source
+      .businesses({ ...businessQuery, limit: PAGE_SIZE, offset: items.length })
+      .then((page) => setItems((current) => [...current, ...page.results]))
+      .catch((e) => setListError(errorText(e)))
+      .finally(() => setLoading(false));
+  }, [conn, businessQuery, items.length]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (panel) setPanel(null);
+      else setActiveId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panel]);
+
+  function open(id: string) {
+    setActiveId(id);
+    const point = mapData.points.find((p) => p.id === id);
+    if (point) setFocus({ lat: point.lat, lon: point.lon, key: Date.now() });
+  }
+
+  function toggle(item: BusinessSummary) {
+    setSelected((current) => {
+      const next = new Map(current);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.set(item.id, item);
+      return next;
+    });
+  }
+
+  function toggleAll(visible: BusinessSummary[]) {
+    setSelected((current) => {
+      const next = new Map(current);
+      const all = visible.every((v) => next.has(v.id));
+      for (const v of visible) {
+        if (all) next.delete(v.id);
+        else next.set(v.id, v);
+      }
+      return next;
+    });
+  }
+
+  /** Enrichment changed a business: update the list row, map marker and selection in place. */
+  const applyChange = useCallback((detail: BusinessDetail) => {
+    const summary = toSummary(detail);
+    setItems((list) => list.map((i) => (i.id === summary.id ? summary : i)));
+    setSelected((current) => (current.has(summary.id) ? new Map(current).set(summary.id, summary) : current));
+    setMapData((m) => ({
+      ...m,
+      points: m.points.map((p) => (p.id === summary.id
+        ? { ...p, confidenceLevel: summary.confidenceLevel, confidenceScore: summary.confidenceScore, reviewRequired: summary.reviewRequired }
+        : p)),
+    }));
+  }, []);
+
+  function mail(to: BusinessSummary[]) {
+    setMailTo(to);
+    setPanel("mail");
+  }
+
+  if (fatal) {
+    return <div className="boot"><div className="notice error">Kan niet starten: {fatal}</div></div>;
+  }
+  if (!conn) {
+    return <SplashScreen />;
+  }
+
+  const { health, source } = conn;
+  const count = (type: string) => options?.recordTypes.find((r) => r.value === type)?.count ?? null;
+  const selection = [...selected.values()];
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <img className="duck-logo" src="/duckduckgov-mascot.png" alt="DuckDuckGov mascotte" />
+          <div>
+            <strong>DuckDuckGov</strong>
+            <small>Lokale economie · {MUNICIPALITY}</small>
+          </div>
+        </div>
+        <div className="top-stats">
+          <span><b>{formatCount(health.businessCount)}</b> records</span>
+          {count("ENTERPRISE") !== null && <span><b>{formatCount(count("ENTERPRISE")!)}</b> ondernemingen</span>}
+          {count("ESTABLISHMENT") !== null && <span><b>{formatCount(count("ESTABLISHMENT")!)}</b> vestigingen</span>}
+          <span title={health.snapshotNote ?? undefined}>KBO-momentopname <b>{formatDate(health.retrievedOn)}</b></span>
+        </div>
+        <div className="top-actions">
+          <span className={`mode ${source.mode}`} title={conn.notice ?? "Verbonden met de backend"}>
+            <i /> {source.mode === "api" ? "Live backend" : "Demodata"}
+          </span>
+          <button type="button" onClick={() => setPanel("pipeline")}><Database size={15} /> Data-pijplijn</button>
+        </div>
+      </header>
+
+      <div className="workspace">
+        <Sidebar
+          search={search}
+          onSearch={setSearch}
+          filters={filters}
+          onFilters={setFilters}
+          options={options}
+          items={items}
+          total={imported ? total : 0}
+          loading={loading}
+          error={listError}
+          activeId={activeId}
+          selected={selected}
+          onOpen={(item) => open(item.id)}
+          onToggle={toggle}
+          onSelectAll={toggleAll}
+          onLoadMore={loadMore}
+        />
+
+        <main className="stage">
+          <MapView
+            data={mapData}
+            fitKey={fitKey}
+            activeId={activeId}
+            selectedIds={new Set(selected.keys())}
+            focus={focus}
+            onOpen={open}
+            attribution={health.attribution}
+          />
+
+          {!imported && (
+            <div className="stage-empty">
+              <p>Nog geen data geladen.</p>
+              <button type="button" className="primary" onClick={() => setPanel("pipeline")}><Database size={15} /> Data-pijplijn openen</button>
+            </div>
+          )}
+
+          {selection.length > 0 && (
+            <div className="selection-bar" role="region" aria-label="Selectie">
+              <span><b>{selection.length}</b> geselecteerd · {selection.filter((s) => s.hasEmail).length} met e-mailadres</span>
+              <button type="button" onClick={() => setPanel("batch")}><Sparkles size={15} /> Verrijk selectie</button>
+              <button type="button" className="primary" onClick={() => mail(selection)}><Mail size={15} /> Mail versturen</button>
+              <button type="button" className="icon-btn" onClick={() => setSelected(new Map())} aria-label="Selectie wissen"><X size={15} /></button>
+            </div>
+          )}
+
+          {activeId && (
+            <BusinessCard
+              key={activeId}
+              source={source}
+              id={activeId}
+              selected={selected.has(activeId)}
+              onClose={() => setActiveId(null)}
+              onOpen={open}
+              onToggleSelect={toggle}
+              onMail={(b) => mail(selected.has(b.id) ? selection : [b])}
+              onChanged={applyChange}
+            />
+          )}
+        </main>
+      </div>
+
+      {panel === "pipeline" && (
+        <PipelinePanel
+          source={source}
+          onClose={() => setPanel(null)}
+          onImported={() => {
+            setImported(true);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
+      {panel === "mail" && (
+        <MailComposer source={source} businesses={mailTo} smtpConfigured={health.smtpConfigured} onClose={() => setPanel(null)} />
+      )}
+      {panel === "batch" && (
+        <BatchEnrich
+          source={source}
+          businesses={selection}
+          onClose={() => setPanel(null)}
+          onItem={applyChange}
+          onFinished={() => setReloadKey((k) => k + 1)}
+        />
+      )}
     </div>
-    <div className="side"><small>SOURCES</small><b>{r.source_count}</b><button onClick={open}>Evidence <ChevronRight size={14}/></button></div>
-  </article>
+  );
 }

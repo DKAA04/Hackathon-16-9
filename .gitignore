@@ -12,3 +12,4 @@ backend/data/civiclens.db
 .design-reference/
 __pycache__/
 *.pyc
+*.tsbuildinfo
