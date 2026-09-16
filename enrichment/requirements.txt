@@ -1,0 +1,9 @@
+httpx
+beautifulsoup4
+phonenumbers
+rapidfuzz
+python-dotenv
+# optional: website discovery through OpenAI web search
+openai
+# tests
+pytest
