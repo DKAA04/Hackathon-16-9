@@ -18,6 +18,7 @@ const ERROR_TEXT: Record<string, string> = {
   NO_RECIPIENT: "Vul eerst een ontvanger in.",
   AI_NOT_CONFIGURED: "AI-concepten zijn niet beschikbaar (geen OpenAI-sleutel in de backend).",
   BUSINESS_NOT_FOUND: "Onderneming niet gevonden.",
+  CALLS_NOT_CONFIGURED: "Bellen is niet ingesteld: vul de ElevenLabs-gegevens in backend/.env in (zie docs/elevenlabs-call.md).",
 };
 const DRAFT_BATCH = 20; // backend limit per draft request
 const AI_DRAFT_TIMEOUT_MS = 180_000; // the backend writes each AI draft with a model call
@@ -170,6 +171,32 @@ export function createHttpSource(baseUrl: string): DataSource {
       return overlay ? applyTool(result, overlay) : result;
     },
 
+    async correct(id, patch) {
+      await request(`/api/businesses/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+      return api.business(id);
+    },
+
+    async startCall(id, note) {
+      const data = await post(`/api/businesses/${encodeURIComponent(id)}/call`, { note: note || undefined });
+      return { conversationId: str(pick(data, "conversation_id")) ?? "", toNumber: str(pick(data, "to_number")) ?? "" };
+    },
+
+    async callStatus(conversationId) {
+      const data = await request(`/api/calls/${encodeURIComponent(conversationId)}`);
+      const collected = (pick(data, "collected") ?? {}) as Record<string, unknown>;
+      return {
+        status: str(pick(data, "status")) ?? "unknown",
+        summary: str(pick(data, "summary")),
+        collected: Object.fromEntries(
+          Object.entries(collected).map(([k, v]) => [k, str(v) ?? ""] as [string, string]).filter(([, v]) => v),
+        ),
+        transcript: arr(pick(data, "transcript")).map((t) => ({
+          role: str(pick(t, "role")) ?? "",
+          message: str(pick(t, "message")) ?? "",
+        })),
+      };
+    },
+
     async enrich(id) {
       const path = `/api/businesses/${encodeURIComponent(id)}/enrich`;
       try {
@@ -215,22 +242,42 @@ export function createHttpSource(baseUrl: string): DataSource {
       await request(`/api/admin/jobs/nightly/run${qs}`, { method: "POST" });
     },
 
-    async draftEmails(req) {
+    async draftEmails(req, onProgress) {
+      const manual = req.mode === "manual";
+      // AI drafts take one model call each: send them one business per request, a few in parallel
+      const size = manual ? DRAFT_BATCH : 1;
+      const chunks: string[][] = [];
+      for (let i = 0; i < req.businessIds.length; i += size) chunks.push(req.businessIds.slice(i, i + size));
       const drafts: EmailDraft[] = [];
       const errors: string[] = [];
-      for (let i = 0; i < req.businessIds.length; i += DRAFT_BATCH) {
-        const data = await post("/api/emails/draft", {
-          business_ids: req.businessIds.slice(i, i + DRAFT_BATCH),
-          language: req.language,
-          purpose: req.purpose,
-          instructions: req.instructions || undefined,
-        }, AI_DRAFT_TIMEOUT_MS);
-        drafts.push(...toDrafts(pick(data, "drafts") ?? data));
-        errors.push(...arr(pick(data, "errors")).map((e) => `${str(pick(e, "business_id")) ?? "?"}: ${describe(str(pick(e, "error")) ?? "fout")}`));
-      }
-      if (!drafts.length && errors.length) throw new ApiError(errors[0].split(": ").slice(1).join(": "), 422);
-      if (errors.length) console.warn("Geen concept voor:", errors);
-      return drafts;
+      let done = 0;
+      onProgress?.(0, req.businessIds.length);
+      const worker = async () => {
+        for (let chunk = chunks.shift(); chunk; chunk = chunks.shift()) {
+          try {
+            const data = await post("/api/emails/draft", {
+              business_ids: chunk,
+              mode: manual ? "manual" : "ai",
+              language: req.language,
+              purpose: req.purpose,
+              instructions: manual ? undefined : req.instructions || undefined,
+              subject: manual ? req.subject : undefined,
+              body: manual ? req.body : undefined,
+            }, AI_DRAFT_TIMEOUT_MS);
+            drafts.push(...toDrafts(pick(data, "drafts") ?? data));
+            errors.push(...arr(pick(data, "errors")).map((e) => describe(str(pick(e, "error")) ?? "fout")));
+          } catch (error) {
+            errors.push(error instanceof Error ? error.message : String(error));
+          }
+          done += chunk.length;
+          onProgress?.(done, req.businessIds.length);
+        }
+      };
+      await Promise.all(Array.from({ length: manual ? 1 : 4 }, worker));
+      if (!drafts.length && errors.length) throw new ApiError(errors[0], 422);
+      if (errors.length) console.warn("Geen concept voor sommige ondernemingen:", errors);
+      const order = new Map(req.businessIds.map((id, i) => [id, i]));
+      return drafts.sort((a, b) => (order.get(a.businessId) ?? 0) - (order.get(b.businessId) ?? 0));
     },
 
     async updateEmail(id, patch) {

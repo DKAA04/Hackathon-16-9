@@ -169,6 +169,7 @@ export async function createDemoSource(): Promise<DataSource> {
     }
   }
   const tools = new Map<string, ToolResult>();
+  const corrections = new Map<string, { email?: string; phone?: string; website?: string; note?: string; at: string }>();
   const drafts = loadDrafts();
   const details = new Map<string, BusinessDetail>();
 
@@ -192,11 +193,14 @@ export async function createDemoSource(): Promise<DataSource> {
     const evidence = assess(r, parent, tool);
     const score = Math.max(0, Math.min(100, 45 + evidence.reduce((sum, e) => sum + e.effect, 0)));
     const level = levelOf(score);
+    const fix = corrections.get(r.business_number);
     const contacts = [
       contact("phone", "Telefoon", tool?.phones[0], tool?.phones.length ?? 0, r.phone),
       contact("email", "E-mail", tool?.emails[0], tool?.emails.length ?? 0, r.email),
       contact("website", "Website", tool?.websites[0], tool?.websites.length ?? 0, null),
-    ];
+    ].map((c) => (fix?.[c.field]
+      ? { ...c, value: fix[c.field]!, source: "manual_override", sourceUrl: null, updatedAt: fix.at, confidence: null }
+      : c));
     const kboAddress = addressLine({ street: r.kbo_street, number: r.kbo_house_number, bus: r.kbo_bus_number,
       postcode: r.kbo_postcode, municipality: r.kbo_municipality });
     const stamps = tool ? stampsFromTool(tool) : [];
@@ -398,6 +402,21 @@ export async function createDemoSource(): Promise<DataSource> {
       };
     },
 
+    async startCall() {
+      throw new ApiError("Bellen werkt alleen met de backend.", 501);
+    },
+
+    async callStatus() {
+      throw new ApiError("Bellen werkt alleen met de backend.", 501);
+    },
+
+    async correct(id, patch) {
+      recordOrThrow(id);
+      corrections.set(id, { ...corrections.get(id), ...patch, at: new Date().toISOString() });
+      details.delete(id);
+      return api.business(id);
+    },
+
     async enrich(id) {
       const r = recordOrThrow(id);
       const result = await toolEnrich({
@@ -432,13 +451,15 @@ export async function createDemoSource(): Promise<DataSource> {
       throw new ApiError("De nachtelijke taak draait in de backend; start de backend om ze uit te voeren.", 501);
     },
 
-    async draftEmails({ businessIds, language, purpose, instructions }) {
+    async draftEmails({ businessIds, language, purpose, instructions, mode, subject: manualSubject, body: manualBody }) {
       const now = new Date().toISOString();
       const created = businessIds.map((id, i) => {
         const r = recordOrThrow(id);
         const d = detailOf(r);
         const phone = d.contacts[0].value;
-        const { subject, body } = template(r, d.displayName, language, purpose, instructions, { phone, email: d.email });
+        const generated = template(r, d.displayName, language, purpose, instructions, { phone, email: d.email });
+        const subject = mode === "manual" && manualSubject ? manualSubject : generated.subject;
+        const body = mode === "manual" && manualBody ? manualBody : generated.body;
         const draft: EmailDraft = {
           id: `demo-${Date.now().toString(36)}-${i}`,
           businessId: id,

@@ -176,6 +176,10 @@ export interface EmailDraft {
 
 export interface DraftRequest {
   businessIds: string[];
+  /** ai: one model call per business (slow); manual: the given subject/body for everyone (instant). */
+  mode?: "ai" | "manual";
+  subject?: string;
+  body?: string;
   language: Language;
   purpose: Purpose;
   instructions?: string;
@@ -267,6 +271,20 @@ export interface JobsInfo {
   runs: JobRunInfo[];
 }
 
+export interface ContactPatch {
+  email?: string;
+  phone?: string;
+  website?: string;
+  note?: string;
+}
+
+export interface CallStatus {
+  status: string; // initiated | in-progress | processing | done | failed
+  summary: string | null;
+  collected: Record<string, string>;
+  transcript: Array<{ role: string; message: string }>;
+}
+
 export interface DataSource {
   mode: DataMode;
   health(): Promise<HealthInfo>;
@@ -275,11 +293,16 @@ export interface DataSource {
   map(query: BusinessQuery): Promise<MapData>;
   business(id: string): Promise<BusinessDetail>;
   enrich(id: string): Promise<EnrichOutcome>;
+  /** AI phone call via ElevenLabs; the backend always dials its test number. */
+  startCall(id: string, note: string): Promise<{ conversationId: string; toNumber: string }>;
+  callStatus(conversationId: string): Promise<CallStatus>;
+  /** Officer correction, stored apart from the KBO source. */
+  correct(id: string, patch: ContactPatch): Promise<BusinessDetail>;
   runImport(): Promise<ImportReport>;
   /** Nightly job schedule and runs; null when this data source has no scheduler (demo mode). */
   jobs(): Promise<JobsInfo | null>;
   runNightly(enrichLimit?: number): Promise<void>;
-  draftEmails(request: DraftRequest): Promise<EmailDraft[]>;
+  draftEmails(request: DraftRequest, onProgress?: (done: number, total: number) => void): Promise<EmailDraft[]>;
   updateEmail(id: string, patch: EmailPatch): Promise<EmailDraft>;
   approveEmail(id: string): Promise<EmailDraft>;
   sendEmail(id: string): Promise<EmailDraft>;

@@ -383,7 +383,7 @@ export function errorInfo(raw: unknown): { code: string | null; message: string 
   }
   const source = detail && typeof detail === "object" ? detail : pick(raw, "error") ?? raw;
   return {
-    code: str(pick(source, "code", "error_code")) ?? (typeof pick(raw, "error") === "string" ? str(pick(raw, "error")) : null),
+    code: str(pick(source, "code", "error_code", "error")) ?? (typeof pick(raw, "error") === "string" ? str(pick(raw, "error")) : null),
     message: str(pick(source, "message", "msg")) ?? str(detail),
   };
 }

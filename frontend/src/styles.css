@@ -401,3 +401,18 @@ input:focus, select:focus, textarea:focus { border-color: #b7ff3c88; }
 .run-log li.warning { color: #ffe6ad; } .run-log li.warning svg { color: var(--warn); }
 .run-log li.error { color: #ffd0d0; } .run-log li.error svg { color: var(--danger); }
 .modal-actions .small { margin-right: auto; align-self: center; }
+.legal-warning { display: block; font-style: normal; font-weight: 500; font-size: 11px; color: var(--warn); margin-top: 2px; }
+
+.corr { margin-left: auto; text-transform: none; letter-spacing: 0; font-family: inherit; color: var(--accent); }
+.correction { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 4px; padding: 12px; border: 1px solid #b7ff3c33; border-radius: 12px; background: #b7ff3c08; }
+.correction label span { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.correction-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+.correction-actions .muted { margin-right: auto; font-size: 11px; }
+.correction .notice { grid-column: 1 / -1; }
+
+.call-block { border: 1px solid #b7ff3c33; border-radius: var(--radius); padding: 12px 14px; background: #b7ff3c08; display: grid; gap: 8px; }
+.call-block p { margin: 0; }
+.call-note span { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.call-block > button { justify-self: start; }
+.call-state { display: grid; gap: 6px; font-size: 13px; }
+.call-state strong { display: inline-flex; align-items: center; gap: 6px; }

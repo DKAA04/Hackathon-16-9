@@ -1,9 +1,9 @@
 import {
-  AlertTriangle, Building2, CheckCircle2, CheckSquare, Clock, ExternalLink, Mail, MinusCircle, RefreshCw, Sparkles,
+  AlertTriangle, Building2, CheckCircle2, CheckSquare, Clock, ExternalLink, Mail, MinusCircle, Pencil, Phone, RefreshCw, Sparkles,
   Square, X, XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { BusinessDetail, BusinessSummary, DataSource, SourceRun } from "../api/types";
+import { useEffect, useState, type FormEvent } from "react";
+import type { BusinessDetail, BusinessSummary, CallStatus, DataSource, SourceRun } from "../api/types";
 import {
   formatDate, formatRegistryNumber, hostOf, relativeDays, sourceLabel,
 } from "../lib/format";
@@ -52,6 +52,14 @@ export function BusinessCard({ source, id, selected, onClose, onOpen, onToggleSe
   const [runs, setRuns] = useState<SourceRun[] | null>(null);
   const [enrichInfo, setEnrichInfo] = useState<string | null>(null);
   const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [calling, setCalling] = useState(false);
+  const [callNote, setCallNote] = useState("");
+  const [call, setCall] = useState<{ id: string; to: string; state: CallStatus | null } | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
+  const [form, setForm] = useState({ email: "", phone: "", website: "", note: "" });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -82,6 +90,68 @@ export function BusinessCard({ source, id, selected, onClose, onOpen, onToggleSe
       setEnrichError(errorText(e));
     } finally {
       setEnriching(false);
+    }
+  }
+
+  const callFinished = (state: CallStatus | null | undefined) => state?.status === "done" || state?.status === "failed";
+
+  useEffect(() => {
+    if (!call || callFinished(call.state)) return;
+    const timer = window.setInterval(() => {
+      source.callStatus(call.id)
+        .then((state) => setCall((c) => (c && c.id === call.id ? { ...c, state } : c)))
+        .catch((e) => setCallError(errorText(e)));
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [call, source]);
+
+  async function startCall() {
+    setCallError(null);
+    setCall(null);
+    try {
+      const started = await source.startCall(id, callNote.trim());
+      setCall({ id: started.conversationId, to: started.toNumber, state: null });
+    } catch (e) {
+      setCallError(errorText(e));
+    }
+  }
+
+  function startEdit() {
+    if (!detail) return;
+    const value = (field: string) => detail.contacts.find((c) => c.field === field)?.value ?? "";
+    setForm({ email: value("email"), phone: value("phone"), website: value("website"), note: "" });
+    setSaveError(null);
+    setEditing(true);
+  }
+
+  async function saveCorrection(e: FormEvent) {
+    e.preventDefault();
+    if (!detail) return;
+    const current = (field: string) => detail.contacts.find((c) => c.field === field)?.value ?? "";
+    const patch: Record<string, string> = {};
+    for (const field of ["email", "phone", "website"] as const) {
+      const value = form[field].trim();
+      if (value && value !== current(field)) patch[field] = value;
+    }
+    if (patch.email && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(patch.email)) {
+      setSaveError("Dit is geen geldig e-mailadres.");
+      return;
+    }
+    if (!Object.keys(patch).length) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await source.correct(id, { ...patch, note: form.note.trim() || "Correctie door medewerker" });
+      setDetail(updated);
+      onChanged(updated);
+      setEditing(false);
+    } catch (err) {
+      setSaveError(errorText(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -135,11 +205,61 @@ export function BusinessCard({ source, id, selected, onClose, onOpen, onToggleSe
           <button type="button" onClick={() => onToggleSelect(d)} aria-pressed={selected}>
             {selected ? <CheckSquare size={15} /> : <Square size={15} />} {selected ? "Geselecteerd" : "Selecteren"}
           </button>
+          <button type="button" onClick={() => setCalling((v) => !v)} aria-pressed={calling}>
+            <Phone size={15} /> Bellen
+          </button>
           <button type="button" onClick={() => onMail(d)}>
             <Mail size={15} /> Mail sturen
           </button>
         </div>
       </header>
+
+      {calling && (
+        <section className="block call-block" aria-live="polite">
+          <h3><Phone size={14} /> AI-oproep (ElevenLabs)</h3>
+          <p className="muted small">
+            De assistent zegt dat hij een AI is en dat het gesprek wordt opgenomen. Testmodus: de backend belt altijd het
+            ingestelde testnummer, nooit de zaak zelf.
+          </p>
+          <label className="call-note">
+            <span>Extra vraag (optioneel)</span>
+            <input value={callNote} onChange={(e) => setCallNote(e.target.value)} placeholder="Bv. zijn jullie op zondag open?" />
+          </label>
+          <button type="button" className="primary" onClick={startCall} disabled={!!call && !callFinished(call.state)}>
+            <Phone size={15} /> Oproep starten
+          </button>
+          {call && (
+            <div className="call-state">
+              <strong>
+                {call.state?.status === "done" ? "Gesprek afgelopen"
+                  : call.state?.status === "failed" ? "Oproep mislukt"
+                  : call.state?.status === "processing" ? "Gesprek wordt verwerkt…"
+                  : <><Spinner size={13} /> Bellen naar {call.to}…</>}
+              </strong>
+              {call.state?.summary && <p>{call.state.summary}</p>}
+              {call.state && Object.keys(call.state.collected).length > 0 && (
+                <dl className="fields">
+                  {Object.entries(call.state.collected).map(([k, v]) => <Field key={k} label={k.replace(/_/g, " ")} value={v} />)}
+                </dl>
+              )}
+              {call.state?.status === "done" && (
+                <p className="muted small">Voorstel: controleer de antwoorden en sla ze op via Contactgegevens → Corrigeren.</p>
+              )}
+              {!!call.state?.transcript.length && (
+                <details>
+                  <summary>Transcript</summary>
+                  <ol className="history">
+                    {call.state.transcript.map((t, i) => (
+                      <li key={i}><time>{t.role === "agent" ? "AI" : "Zaak"}</time><span>{t.message}</span></li>
+                    ))}
+                  </ol>
+                </details>
+              )}
+            </div>
+          )}
+          {callError && <div className="notice error">{callError}</div>}
+        </section>
+      )}
 
       {(enriching || runs || enrichError) && (
         <section className="block enrich-block" aria-live="polite">
@@ -178,8 +298,28 @@ export function BusinessCard({ source, id, selected, onClose, onOpen, onToggleSe
       </section>
 
       <section className="block">
-        <h3>Contactgegevens</h3>
+        <h3>Contactgegevens
+          {!editing && <button type="button" className="link corr" onClick={startEdit}><Pencil size={12} /> Corrigeren</button>}
+        </h3>
         <ContactIcons phone={d.hasPhone} email={d.hasEmail} website={d.hasWebsite} />
+        {editing && (
+          <form className="correction" onSubmit={saveCorrection}>
+            <label><span>E-mail</span><input type="email" value={form.email} placeholder="info@onderneming.be"
+              onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
+            <label><span>Telefoon</span><input value={form.phone} placeholder="03 123 45 67"
+              onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
+            <label><span>Website</span><input value={form.website} placeholder="https://…"
+              onChange={(e) => setForm({ ...form, website: e.target.value })} /></label>
+            <label><span>Bron / notitie</span><input value={form.note} placeholder="Bv. telefonisch bevestigd door de zaakvoerder"
+              onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
+            {saveError && <div className="notice error">{saveError}</div>}
+            <div className="correction-actions">
+              <span className="muted">Wordt apart bewaard; de KBO-gegevens blijven ongewijzigd.</span>
+              <button type="button" onClick={() => setEditing(false)}>Annuleren</button>
+              <button type="submit" className="primary" disabled={saving}>{saving && <Spinner />} Opslaan</button>
+            </div>
+          </form>
+        )}
         <dl className="contacts">
           {d.contacts.map((c) => (
             <div key={c.field} className="contact">
