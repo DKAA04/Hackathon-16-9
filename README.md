@@ -1,5 +1,9 @@
 # DuckDuckGov
 
+**[Try the synthetic browser demo](https://dkaa04.github.io/DKAA04/duck.html)** · [Demo provenance](https://github.com/DKAA04/DKAA04/blob/main/SOURCE_NOTES.md)
+
+[![DuckDuckGov demonstration](https://raw.githubusercontent.com/DKAA04/DKAA04/main/duck-preview.png)](https://dkaa04.github.io/DKAA04/duck.html)
+
 **A municipal business-data exploration and enrichment prototype.**
 
 DuckDuckGov brings a KBO/VKBO business snapshot into a searchable map and review interface. It connects registry records, source evidence, enrichment results and manual corrections so a reviewer can inspect why a business record needs attention.
